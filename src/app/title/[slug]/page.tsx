@@ -27,7 +27,7 @@ export async function generateMetadata({
   const { slug } = await params;
   const title = getTitle(slug);
   return {
-    title: title ? `${title.name} (${title.year}) — Netflix` : "Netflix",
+    title: title ? `${title.name} (${title.year}) — NOFLIX` : "NOFLIX",
     description: title?.overview,
   };
 }

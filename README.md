@@ -1,6 +1,6 @@
-# Netflix Clone — a full, working streaming UI
+# NOFLIX Clone — a full, working streaming UI
 
-A pixel-faithful Netflix experience built with **Next.js 15 (App Router)**, **Tailwind CSS v4**
+A pixel-faithful NOFLIX experience built with **Next.js 15 (App Router)**, **Tailwind CSS v4**
 and **Framer Motion**. Browse, search, save, preview on hover and stream — everything in one
 self-contained app.
 
@@ -50,16 +50,16 @@ the live search and in the provider status endpoint.
 | `GET /api/providers` | which metadata sources are active |
 
 Anything the live providers surface can be played straight away —
-`/play/{tmdbId}?title=…&kind=…` renders the frameXTV player for titles that are
+`/play/{tmdbId}?title=…&kind=…` renders the player for titles that are
 not in the bundled catalogue yet.
 
 ## ✨ What's inside
 
 **Browsing**
-- Animated “Who's watching?” profile gate + a Netflix-style *tudum* splash on entry
+- Animated “Who's watching?” profile gate + a NOFLIX-style *tudum* splash on entry
 - Auto-rotating billboard hero with Ken Burns drift, match score, maturity badge and a
   Play / More Info / My List action row
-- 15+ curated rows: Trending, Top 10 in Pakistan (giant rank numerals), Netflix Originals,
+- 15+ curated rows: Trending, Top 10 in Pakistan (giant rank numerals), NOFLIX Originals,
   Continue Watching (with real progress bars), Because-you-watched, genres, New Releases…
 - Poster cards that lift on hover, with a **floating preview panel** (play, add to list, like,
   match %, genres) rendered in a portal so it never gets clipped by the row scroller
@@ -73,15 +73,18 @@ not in the bundled catalogue yet.
 - Dedicated TV Shows / Movies / New & Popular / Browse All / My List pages
 
 **Title detail**
-- Netflix-style modal: blurred key art header, cast & creator, tagline, season/episode browser,
+- NOFLIX-style modal: blurred key art header, cast & creator, tagline, season/episode browser,
   “More Like This” and an About block
 - Deep-linkable standalone detail pages at `/title/[slug]`
 
 **Playback**
-- Full-bleed player at `/watch/[kind]/[slug]` powered by the **frameXTV** embed
-  (`https://framextv.xyz/embed/{tmdbId}[/{season}/{episode}]`)
+- Full-bleed player at `/watch/[kind]/[slug]` powered by the **CineLite** embed
+  (`https://embed.cinelite.xyz/{tmdbId}`, `/tv/{tmdbId}/{season}/{episode}`,
+  `/anime/{anilistId}/{episode}`), themed with our brand red (`?color=e50914`),
+  pause suggestions on, starting quality selectable (4K → 480p)
 - Custom chrome that auto-hides: back, title, season/episode picker, server switcher,
-  subtitles, mute, fullscreen, seek bar driven by real `frameXTV:timeupdate` telemetry
+  a server switcher (Viper / Archer), quality and subtitle-language menus, next-episode
+  button and a progress rail fed by the player's real `CINELITE_PLAYBACK_PROGRESS` telemetry
 - Keyboard shortcuts — `Space` play/pause, `←`/`→` ±10s, `M` mute, `F` fullscreen,
   `N` next episode, `Esc` exit
 - Watch progress is written back into **Continue Watching** (localStorage)
@@ -158,22 +161,27 @@ The embed is appended without touching playback internals:
 
 ```ts
 // movies
-https://framextv.xyz/embed/550?autoplay=1&muted=0&controls=1
+https://embed.cinelite.xyz/157336?color=e50914&suggestionui=true&quality=1080p&t=120
 // series
-https://framextv.xyz/embed/1399/1/3?autoplay=1&muted=0&controls=1
+https://embed.cinelite.xyz/tv/259909/1/3?color=e50914&suggestionui=true&quality=1080p
 ```
 
 The custom controls talk to the iframe through the documented `postMessage` SDK
 (`play`, `pause`, `seek`, `seekBy`, `mute`, `setVolume`, `setProvider`, `setSubtitle`) and listen
-for `frameXTV:timeupdate` to drive the scrubber and Continue Watching.
+for `CINELITE_PLAYBACK_PROGRESS` to drive the progress rail and Continue Watching.
+Progress is saved both in our own store (`nf.progress`) and in the player's
+`cw_{tmdbId}` key, so a resume lands on the right frame. The player's own exit
+button (`CINELITE_EXIT_PLAYER`) is wired to our router, server/quality/subtitle
+changes are pushed in via `CINELITE_SYNC_SETTINGS`, and anime titles carry an
+AniList id so they stream through the `/anime/` route.
 
 ---
 
 ## ⚖️ Notes
 
-This is a **learning/demo project**. All titles, metadata and artwork belong to Netflix and the
+This is a **learning/demo project**. All titles, metadata and artwork belong to NOFLIX and the
 respective studios; posters are hot-linked from IMDb's public image CDN with local fallbacks.
-Streaming is provided by the third-party frameXTV service — nothing is hosted here.
+Streaming is provided by third-party embed services (CineLite primary, FrameXTV fallback) — nothing is hosted here.
 
 Built with Next.js 15, React 19, Tailwind CSS v4, Framer Motion 12, Inter + Anton (self-hosted
 via Fontsource), and ImageMagick for the artwork pipeline.

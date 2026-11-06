@@ -3,7 +3,7 @@ import { generatedTitles } from "@/data/generated";
 
 /**
  * A curated, opinionated catalogue. Every entry carries a real TMDB id so the
- * frameXTV player can resolve the exact stream, plus hand-written copy so the
+ * CineLite player can resolve the exact stream, plus hand-written copy so the
  * UI never shows a placeholder.
  */
 const series: Title[] = [

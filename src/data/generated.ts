@@ -10,6 +10,7 @@ type Entry = {
   slug: string;
   tmdbId: number;
   imdbId: string;
+  anilistId?: number;
   kind: "movie" | "series";
   name: string;
   year: number;
@@ -87,6 +88,7 @@ export const generatedTitles: Title[] = (entries as Entry[]).map((entry) => {
   return {
     slug: entry.slug,
     tmdbId: entry.tmdbId,
+    anilistId: entry.anilistId,
     kind: entry.kind,
     name: entry.name,
     year: entry.year,

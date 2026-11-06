@@ -6,37 +6,96 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowLeftIcon,
   ChevronDownIcon,
-  FullscreenIcon,
-  MuteIcon,
+  CheckIcon,
   NextIcon,
-  PauseIcon,
-  PlayIcon,
   SubtitlesIcon,
   VolumeIcon,
 } from "@/components/icons";
 import { useStore } from "@/components/store";
+import { Wordmark } from "@/components/wordmark";
 import type { Season, Title } from "@/lib/types";
 import { cn } from "@/lib/cn";
 
-const PROVIDERS = [
-  { id: "auto", label: "Auto" },
-  { id: "barbarian", label: "Barbarian" },
-  { id: "archer", label: "Archer" },
-  { id: "goblin", label: "Goblin" },
+/* ------------------------------------------------------------------ */
+/* Embed providers                                                     */
+/* ------------------------------------------------------------------ */
+
+type ServerId = "cinelite" | "framextv";
+
+const SERVERS: Array<{ id: ServerId; label: string; hint: string }> = [
+  { id: "cinelite", label: "Viper", hint: "CineLite · 4K + subtitles" },
+  { id: "framextv", label: "Archer", hint: "FrameXTV · backup stream" },
 ];
 
-function buildUrl(tmdbId: number, season?: number, episode?: number, provider = "auto") {
+const QUALITIES = ["4k", "1080p", "720p", "480p"] as const;
+type Quality = (typeof QUALITIES)[number];
+
+const SUBTITLE_LANGS = [
+  { id: "off", label: "Off" },
+  { id: "en", label: "English" },
+  { id: "ur", label: "اردو Urdu" },
+  { id: "hi", label: "हिन्दी Hindi" },
+  { id: "ar", label: "العربية Arabic" },
+  { id: "es", label: "Español" },
+  { id: "fr", label: "Français" },
+];
+
+/** NOFLIX brand red, passed to the embed so its chrome matches our UI. */
+const ACCENT = "e50914";
+
+type BuildArgs = {
+  server: ServerId;
+  tmdbId: number;
+  anilistId?: number;
+  kind: "movie" | "series";
+  season: number;
+  episode: number;
+  quality: Quality;
+  resumeAt?: number;
+  restart?: boolean;
+};
+
+function buildSrc({
+  server,
+  tmdbId,
+  anilistId,
+  kind,
+  season,
+  episode,
+  quality,
+  resumeAt,
+  restart,
+}: BuildArgs) {
+  const params = new URLSearchParams();
+
+  if (server === "cinelite") {
+    // https://embed.cinelite.xyz/{tmdbId} | /tv/{id}/{s}/{e} | /anime/{anilistId}/{ep}
+    let base: string;
+    if (anilistId) base = `https://embed.cinelite.xyz/anime/${anilistId}/${episode}`;
+    else if (kind === "series") base = `https://embed.cinelite.xyz/tv/${tmdbId}/${season}/${episode}`;
+    else base = `https://embed.cinelite.xyz/${tmdbId}`;
+
+    params.set("color", ACCENT);
+    params.set("suggestionui", "true");
+    params.set("quality", quality);
+    if (restart) params.set("reset", "1");
+    else if (resumeAt && resumeAt > 20) params.set("t", String(Math.floor(resumeAt)));
+    return `${base}?${params.toString()}`;
+  }
+
   const base =
-    season && episode
+    kind === "series"
       ? `https://framextv.xyz/embed/${tmdbId}/${season}/${episode}`
       : `https://framextv.xyz/embed/${tmdbId}`;
-  const params = new URLSearchParams({ autoplay: "1", muted: "0", controls: "1" });
-  if (provider !== "auto") params.set("server", provider);
+  params.set("autoplay", "1");
+  params.set("muted", "0");
+  params.set("controls", "1");
+  if (resumeAt && resumeAt > 20) params.set("t", String(Math.floor(resumeAt)));
   return `${base}?${params.toString()}`;
 }
 
 function clock(seconds: number) {
-  if (!Number.isFinite(seconds) || seconds < 0) seconds = 0;
+  if (!Number.isFinite(seconds) || seconds <= 0) return "0:00";
   const h = Math.floor(seconds / 3600);
   const m = Math.floor((seconds % 3600) / 60);
   const s = Math.floor(seconds % 60);
@@ -44,6 +103,19 @@ function clock(seconds: number) {
     ? `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`
     : `${m}:${String(s).padStart(2, "0")}`;
 }
+
+/** Shape of the `CINELITE_PLAYBACK_PROGRESS` broadcast. */
+type CineliteProgress = {
+  mediaId?: string;
+  isTv?: boolean;
+  isAnime?: boolean;
+  season?: number | null;
+  episode?: number | null;
+  currentTime?: number;
+  duration?: number;
+  progress?: number;
+  completed?: boolean;
+};
 
 export function Player({
   title,
@@ -57,58 +129,97 @@ export function Player({
   seasons: Season[];
 }) {
   const router = useRouter();
-  const { setProgress, toast } = useStore();
+  const { setProgress, progress, toast } = useStore();
+
   const [season, setSeason] = useState(initialSeason);
   const [episode, setEpisode] = useState(initialEpisode);
-  const [provider, setProvider] = useState("auto");
-  const [state, setState] = useState<"loading" | "ready">("loading");
+  const [server, setServer] = useState<ServerId>("cinelite");
+  const [quality, setQuality] = useState<Quality>("1080p");
+  const [subtitles, setSubtitles] = useState("en");
+  const [open, setOpen] = useState<null | "server" | "quality" | "subs" | "episodes">(null);
+  const [ready, setReady] = useState(false);
   const [chrome, setChrome] = useState(true);
-  const [paused, setPaused] = useState(false);
-  const [muted, setMuted] = useState(false);
-  const [time, setTime] = useState(0);
+  const [playState, setPlayState] = useState<"playing" | "paused">("playing");
+  const [position, setPosition] = useState(0);
   const [duration, setDuration] = useState(0);
-  const [settings, setSettings] = useState<null | "provider" | "episodes">(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
-  const shellRef = useRef<HTMLDivElement>(null);
   const hideTimer = useRef<number | null>(null);
   const lastSaved = useRef(0);
-  const readyTimer = useRef<number | null>(null);
+  const frames = useRef(0);
+
+  /** resume point: only restore when the last watch was meaningful and unfinished */
+  const stored = progress[title.slug];
+  const resumeAt = useMemo(() => {
+    if (!stored) return undefined;
+    if (stored.season !== season || stored.episode !== episode) return undefined;
+    if (stored.percent <= 0.02 || stored.percent >= 0.95) return undefined;
+    return stored.seconds && stored.seconds > 20 ? stored.seconds : undefined;
+  }, [stored, season, episode]);
+
+  const [restart, setRestart] = useState(false);
 
   const src = useMemo(
     () =>
-      title.kind === "series"
-        ? buildUrl(title.tmdbId, season, episode, provider)
-        : buildUrl(title.tmdbId, undefined, undefined, provider),
-    [title.kind, title.tmdbId, season, episode, provider],
+      buildSrc({
+        server,
+        tmdbId: title.tmdbId,
+        anilistId: title.anilistId,
+        kind: title.kind,
+        season,
+        episode,
+        quality,
+        resumeAt: restart ? undefined : resumeAt,
+        restart,
+      }),
+    [server, title, season, episode, quality, resumeAt, restart],
   );
 
   const currentSeason = seasons.find((s) => s.number === season);
   const episodeMeta = currentSeason?.episodes.find((e) => e.number === episode);
-  const hasNext =
-    title.kind === "series" &&
-    Boolean(currentSeason && episode < (currentSeason.episodes.length ?? 0));
+  const hasNext = title.kind === "series" && Boolean(currentSeason && episode < currentSeason.episodes.length);
 
-  /** postMessage bridge to the frameXTV player SDK. */
-  const send = useCallback((action: string, payload: Record<string, unknown> = {}) => {
-    iframeRef.current?.contentWindow?.postMessage({ action, ...payload }, "*");
+  /* preferences survive reloads */
+  useEffect(() => {
+    try {
+      const savedQuality = localStorage.getItem("nf.quality") as Quality | null;
+      const savedServer = localStorage.getItem("nf.server") as ServerId | null;
+      const savedSubs = localStorage.getItem("nf.subs");
+      if (savedQuality && QUALITIES.includes(savedQuality)) setQuality(savedQuality);
+      if (savedServer && SERVERS.some((s) => s.id === savedServer)) setServer(savedServer);
+      if (savedSubs) setSubtitles(savedSubs);
+    } catch {
+      /* ignore */
+    }
   }, []);
 
-  const goNext = useCallback(() => {
-    if (!hasNext) return;
-    setEpisode((e) => e + 1);
-    setState("loading");
-    setPaused(false);
-    setTime(0);
-  }, [hasNext]);
+  /* push settings into the embed */
+  const syncSettings = useCallback(
+    (next: { quality?: Quality; subtitles?: string }) => {
+      const frame = iframeRef.current?.contentWindow;
+      if (!frame) return;
+      frame.postMessage(
+        {
+          type: "CINELITE_SYNC_SETTINGS",
+          preferredQuality: next.quality ?? quality,
+          subtitles: (next.subtitles ?? subtitles) !== "off",
+          subtitleLanguage: (next.subtitles ?? subtitles) === "off" ? null : (next.subtitles ?? subtitles),
+        },
+        "*",
+      );
+    },
+    [quality, subtitles],
+  );
+
+  useEffect(() => {
+    syncSettings({});
+  }, [syncSettings]);
 
   /** chrome auto-hide */
   const poke = useCallback(() => {
     setChrome(true);
     if (hideTimer.current) window.clearTimeout(hideTimer.current);
-    hideTimer.current = window.setTimeout(() => {
-      if (!settings) setChrome(false);
-    }, 3200);
-  }, [settings]);
+    hideTimer.current = window.setTimeout(() => setChrome(false), 3600);
+  }, []);
 
   useEffect(() => {
     poke();
@@ -122,406 +233,431 @@ export function Player({
     };
   }, [poke]);
 
-  /** telemetry from the embed */
+  /* keep the bar visible while a menu is open */
+  useEffect(() => {
+    if (open) {
+      setChrome(true);
+      if (hideTimer.current) window.clearTimeout(hideTimer.current);
+    } else {
+      poke();
+    }
+  }, [open, poke]);
+
+  /* ---- message bridge with the player ---- */
   useEffect(() => {
     const onMessage = (event: MessageEvent) => {
       const data = event.data;
       if (!data || typeof data !== "object") return;
-      if (data.event === "frameXTV:timeupdate") {
-        const current = Number(data.currentTime) || 0;
-        const total = Number(data.duration) || 0;
-        setTime(current);
+
+      if (data.type === "CINELITE_EXIT_PLAYER") {
+        router.back();
+        return;
+      }
+
+      if (data.type === "CINELITE_PLAYBACK_PROGRESS") {
+        const payload = (data.payload ?? {}) as CineliteProgress;
+        const current = Number(payload.currentTime) || 0;
+        const total = Number(payload.duration) || 0;
+        const pct = Number(payload.progress ?? (total ? (current / total) * 100 : 0)) || 0;
+
+        setPosition(current);
         if (total) setDuration(total);
-        setState("ready");
-        const pct = total ? current / total : 0;
+        setReady(true);
+        frames.current += 1;
+        if (frames.current === 1) setChrome(false);
+
         const now = Date.now();
-        if (now - lastSaved.current > 4000) {
+        if (now - lastSaved.current > 3500 || payload.completed) {
           lastSaved.current = now;
-          setProgress(title.slug, { season, episode, percent: pct, updated: now });
+          setProgress(title.slug, {
+            season: payload.season ?? season,
+            episode: payload.episode ?? episode,
+            percent: payload.completed ? 1 : pct / 100,
+            seconds: current,
+            duration: total,
+            updated: now,
+          });
         }
       }
-      if (data.event === "frameXTV:play") setPaused(false);
-      if (data.event === "frameXTV:pause") setPaused(true);
     };
+
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
-  }, [title.slug, season, episode, setProgress]);
+  }, [title.slug, season, episode, setProgress, router]);
 
-  /** keyboard shortcuts */
+  /* the embed never wrote localStorage, so keep a local heartbeat for its own resumes */
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      if (position > 0) {
+        try {
+          localStorage.setItem(
+            `cw_${title.tmdbId}`,
+            JSON.stringify({
+              mediaId: String(title.tmdbId),
+              isTv: title.kind === "series",
+              season: title.kind === "series" ? season : null,
+              episode: title.kind === "series" ? episode : null,
+              currentTime: position,
+              duration,
+              updatedAt: Date.now(),
+            }),
+          );
+        } catch {
+          /* storage full / disabled */
+        }
+      }
+    }, 5000);
+    return () => window.clearInterval(id);
+  }, [title.tmdbId, title.kind, season, episode, position, duration]);
+
+  /* loading safety net — never leave the user staring at a spinner */
+  useEffect(() => {
+    setReady(false);
+    frames.current = 0;
+    const timer = window.setTimeout(() => setReady(true), 9000);
+    return () => window.clearTimeout(timer);
+  }, [src]);
+
+  /* keyboard: only things the embed can't handle itself */
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null;
       if (target && ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)) return;
-      switch (event.key) {
-        case " ":
-          event.preventDefault();
-          send(paused ? "play" : "pause");
-          setPaused((p) => !p);
-          poke();
-          break;
-        case "ArrowRight":
-          send("seekBy", { seconds: 10 });
-          poke();
-          break;
-        case "ArrowLeft":
-          send("seekBy", { seconds: -10 });
-          poke();
-          break;
-        case "m":
-          setMuted((m) => {
-            send(m ? "setVolume" : "mute", m ? { volume: 1 } : {});
-            return !m;
-          });
-          break;
-        case "f":
-          toggleFullscreen();
-          break;
-        case "n":
-          goNext();
-          break;
-        case "Escape":
-          if (settings) setSettings(null);
-          else router.push("/");
-          break;
+      if (event.key === "Escape") {
+        if (open) setOpen(null);
+        else router.back();
+      }
+      if (event.key.toLowerCase() === "n" && hasNext) {
+        setEpisode((e) => e + 1);
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [paused, send, poke, goNext, settings, router]);
+  }, [open, router, hasNext]);
 
-  const toggleFullscreen = () => {
-    const el = shellRef.current;
-    if (!el) return;
-    if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
-    else el.requestFullscreen?.().catch(() => {});
+  const changeQuality = (next: Quality) => {
+    setQuality(next);
+    setOpen(null);
+    try {
+      localStorage.setItem("nf.quality", next);
+    } catch {
+      /* ignore */
+    }
+    syncSettings({ quality: next });
+    toast(`Video quality · ${next.toUpperCase()}`);
   };
 
-  /** fallback: if the embed never reports anything, stop spinning */
-  useEffect(() => {
-    setState("loading");
-    readyTimer.current = window.setTimeout(() => setState((s) => (s === "loading" ? "ready" : s)), 9000);
-    return () => {
-      if (readyTimer.current) window.clearTimeout(readyTimer.current);
-    };
-  }, [src]);
+  const changeServer = (next: ServerId) => {
+    setServer(next);
+    setOpen(null);
+    setReady(false);
+    try {
+      localStorage.setItem("nf.server", next);
+    } catch {
+      /* ignore */
+    }
+    toast(`Server · ${SERVERS.find((s) => s.id === next)?.label}`);
+  };
 
-  const total = duration || (title.kind === "movie" ? (title.runtime ?? 110) * 60 : (episodeMeta?.runtime ?? 48) * 60);
-  const pct = total ? Math.min(100, (time / total) * 100) : 0;
-  const nearEnd = total > 0 && time > 0 && total - time < 90;
-  const episodeLabel =
-    title.kind === "series"
-      ? `S${season}:E${episode} ${episodeMeta ? `· ${episodeMeta.name}` : ""}`
-      : `${title.year} · ${title.maturity}`;
+  const changeSubs = (next: string) => {
+    setSubtitles(next);
+    setOpen(null);
+    try {
+      localStorage.setItem("nf.subs", next);
+    } catch {
+      /* ignore */
+    }
+    syncSettings({ subtitles: next });
+    toast(next === "off" ? "Subtitles off" : `Subtitles · ${SUBTITLE_LANGS.find((l) => l.id === next)?.label}`);
+  };
+
+  const pct = duration > 0 ? Math.min(100, (position / duration) * 100) : 0;
 
   return (
-    <div ref={shellRef} className="relative h-[100svh] w-full overflow-hidden bg-black">
+    <div className="fixed inset-0 z-[80] overflow-hidden bg-black text-white">
       <iframe
         key={src}
         ref={iframeRef}
         src={src}
-        title={`${title.name} — player`}
-        allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
+        title={`${title.name} — NOFLIX player`}
+        allow="autoplay; fullscreen; encrypted-media; picture-in-picture; presentation"
         allowFullScreen
-        onLoad={() => window.setTimeout(() => setState("ready"), 1200)}
+        referrerPolicy="origin"
+        onLoad={() => setReady(true)}
         className="absolute inset-0 h-full w-full border-0"
       />
 
-      {/* loading overlay */}
-      <AnimatePresence>
-        {state === "loading" && (
-          <motion.div
-            initial={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.4 }}
-            className="pointer-events-none absolute inset-0 grid place-items-center bg-black"
-          >
-            <div className="flex flex-col items-center gap-4">
-              <span className="h-10 w-10 animate-spin rounded-full border-2 border-white/20 border-t-netflix-red" />
-              <p className="text-xs uppercase tracking-[0.3em] text-white/50">Preparing stream</p>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {/* pointer-events-none wrapper so the embed keeps receiving clicks */}
+      <div className="pointer-events-none absolute inset-0">
+        {/* top scrim + bar */}
+        <AnimatePresence>
+          {chrome && (
+            <motion.div
+              initial={{ opacity: 0, y: -14 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -14 }}
+              transition={{ duration: 0.22 }}
+              className="pointer-events-auto absolute inset-x-0 top-0 z-20 bg-gradient-to-b from-black/85 via-black/45 to-transparent px-3 pb-14 pt-3 md:px-7 md:pt-4"
+            >
+              <div className="flex items-center gap-2 md:gap-4">
+                <button
+                  type="button"
+                  onClick={() => router.back()}
+                  aria-label="Back"
+                  className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-white/85 transition hover:bg-white/10 hover:text-white"
+                >
+                  <ArrowLeftIcon width={22} height={22} />
+                </button>
 
-      {/* chrome */}
-      <AnimatePresence>
-        {chrome && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.25 }}
-            className="pointer-events-none absolute inset-0 z-20 flex flex-col justify-between"
-            style={{ background: "linear-gradient(to bottom, rgba(0,0,0,0.72), transparent 22%, transparent 66%, rgba(0,0,0,0.86))" }}
-          >
-            {/* top bar */}
-            <div className="pointer-events-auto flex items-center gap-3 px-4 py-4 md:px-8">
-              <button
-                type="button"
-                onClick={() => router.push("/")}
-                aria-label="Back to browsing"
-                className="focus-brand grid h-10 w-10 place-items-center rounded-full text-white transition hover:bg-white/10"
-              >
-                <ArrowLeftIcon width={24} height={24} />
-              </button>
-              <div className="min-w-0">
-                <p className="truncate font-display text-lg leading-tight tracking-wide text-white md:text-2xl">
-                  {title.name}
-                </p>
-                <p className="truncate text-[11.5px] text-white/60">{episodeLabel}</p>
-              </div>
+                <Wordmark className="hidden text-xl sm:block md:text-2xl" asLink={false} />
 
-              <div className="ml-auto flex items-center gap-2">
-                {title.kind === "series" && (
-                  <div className="relative">
-                    <button
-                      type="button"
-                      onClick={() => setSettings(settings === "episodes" ? null : "episodes")}
-                      className="flex items-center gap-1.5 rounded border border-white/25 bg-black/40 px-3 py-1.5 text-xs text-white transition hover:border-white/60"
-                    >
-                      Season {season}
-                      <ChevronDownIcon width={13} height={13} />
-                    </button>
-                    <AnimatePresence>
-                      {settings === "episodes" && (
-                        <motion.div
-                          initial={{ opacity: 0, y: -6 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          exit={{ opacity: 0, y: -6 }}
-                          className="absolute right-0 top-10 z-30 max-h-[60vh] w-[280px] overflow-y-auto rounded-md border border-white/15 bg-[#141414]/97 p-2 shadow-2xl backdrop-blur"
-                        >
-                          <p className="px-2 pb-2 text-[10px] uppercase tracking-[0.2em] text-white/40">
-                            Seasons
-                          </p>
-                          <div className="mb-2 flex flex-wrap gap-1.5 px-1">
-                            {seasons.map((s) => (
-                              <button
-                                key={s.number}
-                                type="button"
-                                onClick={() => {
-                                  setSeason(s.number);
-                                  setEpisode(1);
-                                  setState("loading");
-                                }}
-                                className={cn(
-                                  "rounded px-2.5 py-1 text-xs transition",
-                                  s.number === season
-                                    ? "bg-white text-black"
-                                    : "bg-white/10 text-white/80 hover:bg-white/20",
-                                )}
-                              >
-                                S{s.number}
-                              </button>
-                            ))}
-                          </div>
-                          <p className="px-2 pb-1 text-[10px] uppercase tracking-[0.2em] text-white/40">
-                            Episodes
-                          </p>
-                          {currentSeason?.episodes.map((ep) => (
-                            <button
-                              key={ep.number}
-                              type="button"
-                              onClick={() => {
-                                setEpisode(ep.number);
-                                setState("loading");
-                                setSettings(null);
-                              }}
-                              className={cn(
-                                "flex w-full items-center gap-2 rounded px-2 py-1.5 text-left text-xs transition",
-                                ep.number === episode
-                                  ? "bg-white/15 text-white"
-                                  : "text-white/70 hover:bg-white/10",
-                              )}
-                            >
-                              <span className="w-4 text-white/40">{ep.number}</span>
-                              <span className="flex-1 truncate">{ep.name}</span>
-                              <span className="text-white/30">{ep.runtime}m</span>
-                            </button>
-                          ))}
-                        </motion.div>
-                      )}
-                    </AnimatePresence>
-                  </div>
-                )}
-
-                <div className="relative">
-                  <button
-                    type="button"
-                    onClick={() => setSettings(settings === "provider" ? null : "provider")}
-                    className="hidden items-center gap-1.5 rounded border border-white/25 bg-black/40 px-3 py-1.5 text-xs text-white transition hover:border-white/60 sm:flex"
-                  >
-                    Server: {PROVIDERS.find((p) => p.id === provider)?.label}
-                    <ChevronDownIcon width={13} height={13} />
-                  </button>
-                  <AnimatePresence>
-                    {settings === "provider" && (
-                      <motion.div
-                        initial={{ opacity: 0, y: -6 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: -6 }}
-                        className="absolute right-0 top-10 z-30 w-[180px] overflow-hidden rounded-md border border-white/15 bg-[#141414]/97 py-1 shadow-2xl backdrop-blur"
-                      >
-                        {PROVIDERS.map((p) => (
-                          <button
-                            key={p.id}
-                            type="button"
-                            onClick={() => {
-                              setProvider(p.id);
-                              setSettings(null);
-                              setState("loading");
-                              send("setProvider", { provider: p.id });
-                              toast(`Switching to ${p.label} server…`);
-                            }}
-                            className={cn(
-                              "block w-full px-3 py-2 text-left text-xs transition hover:bg-white/10",
-                              p.id === provider ? "text-white" : "text-white/70",
-                            )}
-                          >
-                            {p.label}
-                          </button>
-                        ))}
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-semibold md:text-base">{title.name}</p>
+                  <p className="truncate text-[11px] text-white/55 md:text-xs">
+                    {title.kind === "series"
+                      ? `S${season} · E${episode}${episodeMeta ? ` · ${episodeMeta.name}` : ""}`
+                      : `${title.year} · ${title.maturity}`}
+                  </p>
                 </div>
 
-                <button
-                  type="button"
-                  aria-label="Subtitles"
-                  onClick={() => {
-                    send("setSubtitle", { index: 0 });
-                    toast("Subtitles toggled inside the player");
-                  }}
-                  className="hidden h-9 w-9 place-items-center rounded-full text-white transition hover:bg-white/10 sm:grid"
-                >
-                  <SubtitlesIcon width={19} height={19} />
-                </button>
-                <button
-                  type="button"
-                  aria-label={muted ? "Unmute" : "Mute"}
-                  onClick={() => {
-                    send(muted ? "setVolume" : "mute", muted ? { volume: 1 } : {});
-                    setMuted((m) => !m);
-                  }}
-                  className="grid h-9 w-9 place-items-center rounded-full text-white transition hover:bg-white/10"
-                >
-                  {muted ? <MuteIcon width={19} height={19} /> : <VolumeIcon width={19} height={19} />}
-                </button>
-                <button
-                  type="button"
-                  aria-label="Fullscreen"
-                  onClick={toggleFullscreen}
-                  className="grid h-9 w-9 place-items-center rounded-full text-white transition hover:bg-white/10"
-                >
-                  <FullscreenIcon width={19} height={19} />
-                </button>
-              </div>
-            </div>
+                <div className="flex shrink-0 items-center gap-1.5 md:gap-2">
+                  {title.kind === "series" && seasons.length > 0 && (
+                    <BarButton
+                      label={`S${season} E${episode}`}
+                      active={open === "episodes"}
+                      onClick={() => setOpen(open === "episodes" ? null : "episodes")}
+                      className="hidden sm:inline-flex"
+                    />
+                  )}
 
-            {/* bottom bar */}
-            <div className="pointer-events-auto px-4 pb-5 md:px-8">
-              <AnimatePresence>
-                {nearEnd && hasNext && (
-                  <motion.div
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0 }}
-                    className="mb-4 flex justify-end"
+                  <BarButton
+                    label={<><VolumeIcon width={15} height={15} /> {SERVERS.find((s) => s.id === server)?.label}</>}
+                    active={open === "server"}
+                    onClick={() => setOpen(open === "server" ? null : "server")}
+                  />
+
+                  <BarButton
+                    label={quality.toUpperCase()}
+                    active={open === "quality"}
+                    onClick={() => setOpen(open === "quality" ? null : "quality")}
+                    className="hidden sm:inline-flex"
+                  />
+
+                  <button
+                    type="button"
+                    onClick={() => setOpen(open === "subs" ? null : "subs")}
+                    aria-label="Subtitles and audio"
+                    className={cn(
+                      "grid h-9 w-9 place-items-center rounded-md border transition",
+                      subtitles === "off"
+                        ? "border-white/15 text-white/50 hover:text-white"
+                        : "border-white/30 text-white hover:bg-white/10",
+                    )}
                   >
+                    <SubtitlesIcon width={17} height={17} />
+                  </button>
+
+                  {hasNext && (
                     <button
                       type="button"
-                      onClick={goNext}
-                      className="flex items-center gap-2 rounded bg-white px-4 py-2 text-sm font-semibold text-black transition hover:bg-white/85"
+                      onClick={() => {
+                        setEpisode((e) => e + 1);
+                        setReady(false);
+                      }}
+                      aria-label="Next episode"
+                      className="grid h-9 w-9 place-items-center rounded-md border border-white/15 text-white/80 transition hover:bg-white/10 hover:text-white"
                     >
-                      Next episode
-                      <NextIcon width={15} height={15} />
+                      <NextIcon width={17} height={17} />
                     </button>
+                  )}
+                </div>
+              </div>
+
+              {/* menus */}
+              <AnimatePresence>
+                {open && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -8, scale: 0.98 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: -6, scale: 0.98 }}
+                    transition={{ duration: 0.16 }}
+                    className="absolute right-3 top-[62px] z-30 w-[268px] overflow-hidden rounded-lg border border-white/10 bg-[#141414]/95 p-1.5 shadow-2xl backdrop-blur-xl md:right-7"
+                  >
+                    {open === "server" && (
+                      <>
+                        <MenuTitle>Streaming server</MenuTitle>
+                        {SERVERS.map((item) => (
+                          <MenuRow
+                            key={item.id}
+                            active={server === item.id}
+                            onClick={() => changeServer(item.id)}
+                            title={item.label}
+                            subtitle={item.hint}
+                          />
+                        ))}
+                      </>
+                    )}
+
+                    {open === "quality" && (
+                      <>
+                        <MenuTitle>Video quality</MenuTitle>
+                        {QUALITIES.map((item) => (
+                          <MenuRow
+                            key={item}
+                            active={quality === item}
+                            onClick={() => changeQuality(item)}
+                            title={item.toUpperCase()}
+                            subtitle={item === "4k" ? "Ultra HD, data heavy" : item === "1080p" ? "Recommended" : "Lower data"}
+                          />
+                        ))}
+                      </>
+                    )}
+
+                    {open === "subs" && (
+                      <>
+                        <MenuTitle>Subtitles</MenuTitle>
+                        {SUBTITLE_LANGS.map((lang) => (
+                          <MenuRow
+                            key={lang.id}
+                            active={subtitles === lang.id}
+                            onClick={() => changeSubs(lang.id)}
+                            title={lang.label}
+                          />
+                        ))}
+                      </>
+                    )}
+
+                    {open === "episodes" && currentSeason && (
+                      <>
+                        <MenuTitle>{`Season ${season}`}</MenuTitle>
+                        <div className="max-h-[280px] overflow-y-auto">
+                          {currentSeason.episodes.map((item) => (
+                            <MenuRow
+                              key={item.number}
+                              active={episode === item.number}
+                              onClick={() => {
+                                setEpisode(item.number);
+                                setOpen(null);
+                                setReady(false);
+                              }}
+                              title={`E${item.number} · ${item.name}`}
+                              subtitle={`${item.runtime} min`}
+                            />
+                          ))}
+                        </div>
+                      </>
+                    )}
                   </motion.div>
                 )}
               </AnimatePresence>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
-              <div className="flex items-center gap-3">
-                <button
-                  type="button"
-                  aria-label={paused ? "Play" : "Pause"}
-                  onClick={() => {
-                    send(paused ? "play" : "pause");
-                    setPaused((p) => !p);
-                  }}
-                  className="grid h-10 w-10 place-items-center rounded-full text-white transition hover:bg-white/10"
-                >
-                  {paused ? <PlayIcon width={22} height={22} /> : <PauseIcon width={20} height={20} />}
-                </button>
-
-                <button
-                  type="button"
-                  aria-label={hasNext ? "Next episode" : "Next"}
-                  onClick={goNext}
-                  disabled={!hasNext}
-                  className="grid h-10 w-10 place-items-center rounded-full text-white transition hover:bg-white/10 disabled:opacity-30"
-                >
-                  <NextIcon width={20} height={20} />
-                </button>
-
-                <div className="flex flex-1 items-center gap-3">
-                  <span className="hidden text-[11px] tabular-nums text-white/70 sm:block">
-                    {clock(time)}
-                  </span>
-                  <div
-                    className="group relative h-[4px] flex-1 cursor-pointer rounded-full bg-white/25"
-                    onClick={(event) => {
-                      const rect = event.currentTarget.getBoundingClientRect();
-                      const ratio = (event.clientX - rect.left) / rect.width;
-                      send("seek", { time: Math.round(ratio * total) });
-                      setTime(ratio * total);
-                    }}
-                    role="slider"
-                    aria-label="Seek"
-                    aria-valuemin={0}
-                    aria-valuemax={Math.round(total)}
-                    aria-valuenow={Math.round(time)}
-                    tabIndex={0}
-                  >
-                    <div
-                      className="absolute inset-y-0 left-0 rounded-full bg-netflix-red transition-[width] duration-200"
-                      style={{ width: `${pct}%` }}
-                    />
-                    <div
-                      className="absolute top-1/2 h-3 w-3 -translate-y-1/2 rounded-full bg-netflix-red opacity-0 transition group-hover:opacity-100"
-                      style={{ left: `calc(${pct}% - 6px)` }}
-                    />
-                  </div>
-                  <span className="hidden text-[11px] tabular-nums text-white/50 sm:block">
-                    {clock(total)}
-                  </span>
-                </div>
-
-                {title.kind === "series" && (
-                  <span className="hidden text-[11px] uppercase tracking-[0.18em] text-white/45 md:block">
-                    {episodeLabel}
-                  </span>
-                )}
-              </div>
-
-              <p className="mt-3 hidden text-[10.5px] text-white/30 md:block">
-                Space play/pause · ← → seek · M mute · F fullscreen · N next episode · Esc exit
-              </p>
-            </div>
-          </motion.div>
+        {/* thin progress rail fed by the player's telemetry */}
+        {ready && duration > 0 && (
+          <div className="absolute inset-x-0 top-0 z-30 h-[3px] bg-white/10">
+            <div
+              className="h-full bg-[#e50914] transition-[width] duration-500"
+              style={{ width: `${pct}%` }}
+            />
+          </div>
         )}
-      </AnimatePresence>
 
-      {/* stream fallback helper */}
-      {state === "ready" && (
-        <a
-          href={src}
-          target="_blank"
-          rel="noreferrer"
-          className="absolute bottom-2 right-3 z-30 rounded bg-black/50 px-2 py-1 text-[10px] text-white/40 transition hover:text-white"
-        >
-          Stream not starting? Open embed ↗
-        </a>
-      )}
+        {/* buffering state */}
+        <AnimatePresence>
+          {!ready && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 z-10 grid place-items-center bg-black"
+            >
+              <div className="flex flex-col items-center gap-5">
+                <Wordmark className="text-3xl md:text-4xl" asLink={false} />
+                <div className="h-[3px] w-40 overflow-hidden rounded-full bg-white/15">
+                  <motion.div
+                    className="h-full w-1/3 rounded-full bg-[#e50914]"
+                    animate={{ x: ["-100%", "300%"] }}
+                    transition={{ duration: 1.35, repeat: Infinity, ease: "easeInOut" }}
+                  />
+                </div>
+                <p className="text-[11px] uppercase tracking-[0.3em] text-white/45">
+                  Loading {title.name}
+                </p>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
     </div>
+  );
+}
+
+function BarButton({
+  label,
+  onClick,
+  active,
+  className,
+}: {
+  label: React.ReactNode;
+  onClick: () => void;
+  active?: boolean;
+  className?: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "inline-flex h-9 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium transition",
+        active ? "border-white/60 bg-white/10 text-white" : "border-white/15 text-white/75 hover:bg-white/10 hover:text-white",
+        className,
+      )}
+    >
+      {label}
+      <ChevronDownIcon width={13} height={13} />
+    </button>
+  );
+}
+
+function MenuTitle({ children }: { children: React.ReactNode }) {
+  return (
+    <p className="px-2.5 pb-1 pt-1.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-white/40">
+      {children}
+    </p>
+  );
+}
+
+function MenuRow({
+  title,
+  subtitle,
+  active,
+  onClick,
+}: {
+  title: React.ReactNode;
+  subtitle?: string;
+  active?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left transition",
+        active ? "bg-white/10" : "hover:bg-white/5",
+      )}
+    >
+      <span className="grid w-4 shrink-0 place-items-center text-[#e50914]">
+        {active ? <CheckIcon width={14} height={14} /> : null}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className={cn("block truncate text-[13px]", active ? "text-white" : "text-white/80")}>
+          {title}
+        </span>
+        {subtitle && <span className="block truncate text-[11px] text-white/40">{subtitle}</span>}
+      </span>
+    </button>
   );
 }

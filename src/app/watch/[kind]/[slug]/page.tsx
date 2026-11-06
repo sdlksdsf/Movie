@@ -14,7 +14,7 @@ export async function generateMetadata({
 }): Promise<Metadata> {
   const { slug } = await params;
   const title = getTitle(slug);
-  return { title: title ? `${title.name} — Netflix` : "Netflix" };
+  return { title: title ? `${title.name} — NOFLIX` : "NOFLIX" };
 }
 
 export default async function WatchPage({

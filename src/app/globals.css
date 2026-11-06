@@ -93,7 +93,7 @@ body {
   box-shadow: 0 24px 60px -12px rgba(0, 0, 0, 0.85);
 }
 
-/* Netflix-style tabular poster caption */
+/* NOFLIX-style tabular poster caption */
 .poster-caption {
   text-shadow: 0 2px 12px rgba(0, 0, 0, 0.85);
 }
@@ -206,7 +206,7 @@ body {
   }
 }
 
-/* Netflix Sans-ish tracking for the wordmark */
+/* NOFLIX Sans-ish tracking for the wordmark */
 .wordmark {
   font-family: var(--font-display);
   letter-spacing: 0.04em;

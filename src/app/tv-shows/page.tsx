@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { BrowseGrid } from "@/components/browse-grid";
 import { allTitles } from "@/lib/catalog";
 
-export const metadata: Metadata = { title: "TV Shows — Netflix" };
+export const metadata: Metadata = { title: "TV Shows — NOFLIX" };
 
 export default function Page() {
   return (

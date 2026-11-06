@@ -11,7 +11,7 @@ import "server-only";
 
 export type ExternalTitle = {
   source: "tmdb" | "tvmaze" | "jikan" | "imdb";
-  /** TMDB id when we know it — this is what the frameXTV player needs. */
+  /** TMDB id when we know it — this is what the CineLite player needs. */
   tmdbId?: number;
   name: string;
   year?: number;

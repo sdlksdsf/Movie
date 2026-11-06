@@ -319,7 +319,7 @@ function ModalBody({
           </div>
           <p className="mt-4 text-[11px] leading-relaxed text-white/30">
             Demo project. Metadata and artwork belong to their respective owners; streaming is
-            provided by the third-party frameXTV embed.
+            provided by the third-party CineLite embed.
           </p>
         </div>
       </motion.div>

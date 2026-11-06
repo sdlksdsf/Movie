@@ -16,7 +16,7 @@ export default function NotFound() {
           href="/"
           className="mt-8 inline-flex rounded bg-white px-6 py-3 text-sm font-semibold text-black transition hover:bg-white/85"
         >
-          Netflix Home
+          NOFLIX Home
         </Link>
         <p className="mt-10 text-xs uppercase tracking-[0.3em] text-white/25">
           Error Code <span className="text-white/60">NSES-404</span>

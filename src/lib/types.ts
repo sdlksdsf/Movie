@@ -23,8 +23,10 @@ export type Genre =
 export type Title = {
   /** URL-safe unique id, also used for the artwork filename */
   slug: string;
-  /** The Movie Database id — powers the frameXTV player embed */
+  /** The Movie Database id — powers the player embeds */
   tmdbId: number;
+  /** AniList id — used by the embed's dedicated anime route */
+  anilistId?: number;
   kind: Kind;
   name: string;
   year: number;
@@ -51,7 +53,7 @@ export type Title = {
   featured?: boolean;
   /** position in the top-10 list (1 = #1) */
   top10?: number;
-  /** Netflix Original styling */
+  /** NOFLIX Original styling */
   original?: boolean;
   /** small descriptor used by the player ("Limited Series", "Film", …) */
   format: string;

@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { BrowseGrid } from "@/components/browse-grid";
 import { allTitles, topTen } from "@/lib/catalog";
 
-export const metadata: Metadata = { title: "New & Popular — Netflix" };
+export const metadata: Metadata = { title: "New & Popular — NOFLIX" };
 
 export default function Page() {
   const ranked = topTen();

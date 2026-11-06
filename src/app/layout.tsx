@@ -6,10 +6,10 @@ import { StoreProvider } from "@/components/store";
 import { AppShell } from "@/components/app-shell";
 
 export const metadata: Metadata = {
-  title: "Netflix — Watch TV Shows Online, Watch Movies Online",
+  title: "NOFLIX — Watch TV Shows Online, Watch Movies Online",
   description:
-    "A pixel-faithful Netflix experience: browse thousands of titles, hover to preview, and stream instantly in the built-in player.",
-  applicationName: "Netflix",
+    "A pixel-faithful NOFLIX experience: browse thousands of titles, hover to preview, and stream instantly in the built-in player.",
+  applicationName: "NOFLIX",
 };
 
 export const viewport: Viewport = {

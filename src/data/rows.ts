@@ -39,8 +39,8 @@ export const rows: Row[] = [
   },
   {
     id: "originals",
-    title: "Netflix Originals",
-    hint: "Only on Netflix",
+    title: "NOFLIX Originals",
+    hint: "Only on NOFLIX",
     slugs: [
       "stranger-things",
       "wednesday",
@@ -79,7 +79,7 @@ export const rows: Row[] = [
   {
     id: "new",
     title: "New Releases",
-    hint: "Fresh on Netflix this month",
+    hint: "Fresh on NOFLIX this month",
     slugs: [
       "dune-part-two",
       "oppenheimer",
@@ -234,7 +234,7 @@ export const rows: Row[] = [
   },
   {
     id: "new-on-netflix",
-    title: "New on Netflix",
+    title: "New on NOFLIX",
     hint: "Fresh from the pipeline this week",
     slugs: [
       "spider-man-brand-new-day",

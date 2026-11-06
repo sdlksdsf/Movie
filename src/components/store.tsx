@@ -23,6 +23,10 @@ export type WatchProgress = {
   episode: number;
   /** 0 – 1 */
   percent: number;
+  /** playback position in seconds, used for `?t=` resumes */
+  seconds?: number;
+  /** total length in seconds */
+  duration?: number;
   updated: number;
 };
 

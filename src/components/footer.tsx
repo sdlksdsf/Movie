@@ -64,14 +64,14 @@ export function Footer() {
 
         <div className="mt-8 space-y-2 text-[11px] leading-relaxed text-white/35">
           <p>
-            A Netflix-inspired demo built with Next.js, Tailwind CSS and Framer Motion. All titles,
+            A NOFLIX-inspired demo built with Next.js, Tailwind CSS and Framer Motion. All titles,
             artwork and metadata belong to their respective rights holders.
           </p>
           <p>
-            Playback is delivered through the third-party frameXTV embed. If a stream doesn&apos;t
+            Playback is delivered through the third-party CineLite embed. If a stream doesn&apos;t
             start, the source may be temporarily unavailable — try another title or server.
           </p>
-          <p className="pt-2">Netflix Clone · Karachi, Pakistan</p>
+          <p className="pt-2">NOFLIX Clone · Karachi, Pakistan</p>
         </div>
       </div>
     </footer>
