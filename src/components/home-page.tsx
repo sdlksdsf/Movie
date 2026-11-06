@@ -3,12 +3,35 @@
 import { Billboard } from "@/components/billboard";
 import { Footer } from "@/components/footer";
 import { Navbar } from "@/components/navbar";
+import { LiveRows } from "@/components/live-rows";
 import { Row, ContinueRow } from "@/components/row";
 import { useStore } from "@/components/store";
-import { continueWatching, rows } from "@/data/rows";
+import { continueWatching, dynamicRows, rows } from "@/data/rows";
+import { getTitle, isKidsSafe } from "@/lib/catalog";
+import { useMemo } from "react";
 
 export function HomePage() {
-  const { myList } = useStore();
+  const { myList, profile } = useStore();
+
+  const kids = Boolean(profile?.kids);
+  const keepKidsSafe = useMemo(
+    () => (slugs: string[]) =>
+      kids
+        ? slugs.filter((slug) => {
+            const title = getTitle(slug);
+            return Boolean(title && isKidsSafe(title));
+          })
+        : slugs,
+    [kids],
+  );
+
+  const shelves = useMemo(() => {
+    const all = [...rows, ...dynamicRows];
+    if (!kids) return all;
+    return all
+      .map((row) => ({ ...row, slugs: keepKidsSafe(row.slugs) }))
+      .filter((row) => row.slugs.length >= 3);
+  }, [kids, keepKidsSafe]);
 
   return (
     <>
@@ -17,7 +40,7 @@ export function HomePage() {
         <Billboard />
 
         <div className="relative z-10 -mt-[9vh] pb-10">
-          <ContinueRow slugs={continueWatching} />
+          <ContinueRow slugs={keepKidsSafe(continueWatching)} />
 
           {myList.length > 0 && (
             <ContinueRow
@@ -28,7 +51,9 @@ export function HomePage() {
             />
           )}
 
-          {rows.map((row, i) => (
+          <LiveRows />
+
+          {shelves.map((row, i) => (
             <Row key={row.id} row={row} priority={i < 2} />
           ))}
         </div>

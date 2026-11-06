@@ -53,6 +53,37 @@ Anything the live providers surface can be played straight away —
 `/play/{tmdbId}?title=…&kind=…` renders the player for titles that are
 not in the bundled catalogue yet.
 
+---
+
+## 🎬 Player (CineLite)
+
+`/watch/[kind]/[slug]` and `/play/[id]` render a single full-bleed embed with a
+slim auto-hiding bar: back, title, **server** (Viper → CineLite, Archer → FrameXTV),
+**quality** (4K → 480p), **subtitles/language** (EN, اردو, हिन्दी, العربية, ES, FR),
+next-episode and an episode sheet.
+
+* routes: `/{tmdbId}` · `/tv/{tmdbId}/{s}/{e}` · `/anime/{anilistId}/{ep}`
+* params: `?color=e50914&suggestionui=true&quality=1080p[&t=resume]`
+* bridge in: `CINELITE_SYNC_SETTINGS`, `CINELITE_SYNC_FEBBOX_TOKEN`
+* bridge out: `CINELITE_PLAYBACK_PROGRESS` (Continue Watching + resume), `CINELITE_EXIT_PLAYER`
+* **the iframe URL never depends on playback state**, so the stream can't reload mid-play
+
+## 🔥 Live catalogue (browser-side, no server network needed)
+
+`src/lib/live.ts` + `src/components/live-rows.tsx` stream extra shelves at runtime:
+
+* **TMDB** — thousands of movies/series/anime (paste a free key in the “Add key” bar,
+  or set `NEXT_PUBLIC_TMDB_KEY`)
+* **TVMaze** — 40 highly rated series, keyless (IMDb → TMDB resolved on click)
+* **Jikan** — 50 top anime, keyless (MAL → AniList resolved on click, plays via `/anime/`)
+
+## 👤 Accounts
+
+First visit creates a profile: name, avatar, and **Adult / Kids**. Kids profiles
+only see family-safe titles in rows browsing, browse grids and search. Profiles,
+My List and progress are per-device (`nf.*` in localStorage), and a profile can be
+added or removed any time from “Manage profiles”.
+
 ## ✨ What's inside
 
 **Browsing**

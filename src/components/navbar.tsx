@@ -6,7 +6,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useRef, useState } from "react";
 import { Artwork } from "@/components/artwork";
 import { BellIcon, ChevronDownIcon, SearchIcon } from "@/components/icons";
-import { profiles, useStore } from "@/components/store";
+import { useStore } from "@/components/store";
 import { Wordmark } from "@/components/wordmark";
 import { cn } from "@/lib/cn";
 import { allTitles } from "@/lib/catalog";
@@ -23,7 +23,7 @@ const links = [
 export function Navbar() {
   const pathname = usePathname();
   const router = useRouter();
-  const { profile, setProfile, setSearchOpen, hydrated } = useStore();
+  const { profile, profiles, setProfile, setSearchOpen, hydrated } = useStore();
   const [scrolled, setScrolled] = useState(false);
   const [menu, setMenu] = useState<null | "profile" | "bell">(null);
   const shellRef = useRef<HTMLDivElement>(null);
@@ -102,6 +102,10 @@ export function Navbar() {
             </Link>
           </li>
           <li>
+            <Link href="/anime" className="whitespace-nowrap text-white/80">
+              Anime
+            </Link>
+
             <Link href="/my-list" className="whitespace-nowrap text-white/80">
               My List
             </Link>

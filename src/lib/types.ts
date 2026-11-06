@@ -27,6 +27,8 @@ export type Title = {
   tmdbId: number;
   /** AniList id — used by the embed's dedicated anime route */
   anilistId?: number;
+  /** anime gets its own shelf, page and route */
+  anime?: boolean;
   kind: Kind;
   name: string;
   year: number;

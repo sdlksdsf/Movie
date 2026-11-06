@@ -16,7 +16,23 @@ export type Profile = {
   name: string;
   gradient: string;
   emoji: string;
+  /** kids profiles only see family-safe titles */
+  kids: boolean;
 };
+
+/** Avatar presets offered on the profile screen. */
+export const AVATARS: Array<{ emoji: string; gradient: string }> = [
+  { emoji: "🍿", gradient: "from-[#e50914] via-[#7f1d1d] to-[#1a1a1a]" },
+  { emoji: "🎬", gradient: "from-[#2563eb] via-[#1e3a8a] to-[#0b1120]" },
+  { emoji: "🦸", gradient: "from-[#f59e0b] via-[#b45309] to-[#1a1206]" },
+  { emoji: "👽", gradient: "from-[#22c55e] via-[#15803d] to-[#04150a]" },
+  { emoji: "🐉", gradient: "from-[#a855f7] via-[#6b21a8] to-[#12021f]" },
+  { emoji: "🎧", gradient: "from-[#06b6d4] via-[#0e7490] to-[#04121a]" },
+  { emoji: "👾", gradient: "from-[#ec4899] via-[#9d174d] to-[#1a0410]" },
+  { emoji: "🐼", gradient: "from-[#f472b6] via-[#be185d] to-[#20040f]" },
+  { emoji: "🧑‍🚀", gradient: "from-[#64748b] via-[#334155] to-[#0b1018]" },
+  { emoji: "🦊", gradient: "from-[#fb923c] via-[#c2410c] to-[#1a0a03]" },
+];
 
 export type WatchProgress = {
   season: number;
@@ -36,6 +52,9 @@ type Store = {
   hydrated: boolean;
   profile: Profile | null;
   setProfile: (p: Profile | null) => void;
+  profiles: Profile[];
+  addProfile: (input: Omit<Profile, "id">) => Profile;
+  removeProfile: (id: string) => void;
   myList: string[];
   inList: (slug: string) => boolean;
   toggleList: (slug: string) => void;
@@ -74,6 +93,7 @@ const write = (key: string, value: unknown) => {
 export function StoreProvider({ children }: { children: ReactNode }) {
   const [hydrated, setHydrated] = useState(false);
   const [profile, setProfileState] = useState<Profile | null>(null);
+  const [profiles, setProfilesState] = useState<Profile[]>([]);
   const [myList, setMyList] = useState<string[]>([]);
   const [progress, setProgressState] = useState<Record<string, WatchProgress>>({});
   const [activeSlug, setActiveSlug] = useState<string | null>(null);
@@ -84,6 +104,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     setProfileState(read<Profile | null>("nf.profile", null));
+    setProfilesState(read<Profile[]>("nf.profiles", []));
     setMyList(read<string[]>("nf.mylist", []));
     setProgressState(read<Record<string, WatchProgress>>("nf.progress", {}));
     setHydrated(true);
@@ -92,6 +113,29 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const setProfile = useCallback((p: Profile | null) => {
     setProfileState(p);
     write("nf.profile", p);
+  }, []);
+
+  const addProfile = useCallback((input: Omit<Profile, "id">) => {
+    const created: Profile = { ...input, id: `p_${Date.now().toString(36)}` };
+    setProfilesState((current) => {
+      const next = [...current, created];
+      write("nf.profiles", next);
+      return next;
+    });
+    return created;
+  }, []);
+
+  const removeProfile = useCallback((id: string) => {
+    setProfilesState((current) => {
+      const next = current.filter((p) => p.id !== id);
+      write("nf.profiles", next);
+      return next;
+    });
+    setProfileState((current) => {
+      if (current?.id !== id) return current;
+      write("nf.profile", null);
+      return null;
+    });
   }, []);
 
   const toggleList = useCallback(
@@ -159,6 +203,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       hydrated,
       profile,
       setProfile,
+      profiles,
+      addProfile,
+      removeProfile,
       myList,
       inList,
       toggleList,
@@ -177,6 +224,9 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       hydrated,
       profile,
       setProfile,
+      profiles,
+      addProfile,
+      removeProfile,
       myList,
       inList,
       toggleList,
@@ -199,9 +249,4 @@ export function useStore() {
   return ctx;
 }
 
-export const profiles: Profile[] = [
-  { id: "p1", name: "You", gradient: "from-[#e50914] via-[#7f1d1d] to-[#1a1a1a]", emoji: "🍿" },
-  { id: "p2", name: "Binge Buddy", gradient: "from-[#2563eb] via-[#1e3a8a] to-[#0b1120]", emoji: "🎬" },
-  { id: "p3", name: "Movie Buff", gradient: "from-[#f59e0b] via-[#b45309] to-[#1a1206]", emoji: "⭐" },
-  { id: "p4", name: "Kids", gradient: "from-[#22c55e] via-[#15803d] to-[#06170c]", emoji: "🧸" },
-];
+

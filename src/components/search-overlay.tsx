@@ -6,7 +6,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { CloseIcon, SearchIcon } from "@/components/icons";
 import { useStore } from "@/components/store";
 import { Artwork } from "@/components/artwork";
-import { allTitles, genres, genreSlug, searchTitles, shortMeta } from "@/lib/catalog";
+import { allTitles, genres, genreSlug, isKidsSafe, searchTitles, shortMeta } from "@/lib/catalog";
 
 const genreColors = [
   "#e50914",
@@ -24,7 +24,7 @@ const genreColors = [
 ];
 
 export function SearchOverlay() {
-  const { searchOpen, setSearchOpen, openTitle } = useStore();
+  const { searchOpen, setSearchOpen, openTitle, profile } = useStore();
   const [query, setQuery] = useState("");
   const [live, setLive] = useState<
     Array<{ name: string; year?: number; kind: string; poster?: string; source: string; tmdbId?: number }>
@@ -40,7 +40,10 @@ export function SearchOverlay() {
     setQuery("");
   }, [searchOpen]);
 
-  const results = useMemo(() => searchTitles(query, 30), [query]);
+  const results = useMemo(() => {
+    const hits = searchTitles(query, 30);
+    return profile?.kids ? hits.filter(isKidsSafe) : hits;
+  }, [query, profile?.kids]);
 
   // ask the metadata pipeline for anything missing from the bundled catalogue
   useEffect(() => {
@@ -71,10 +74,10 @@ export function SearchOverlay() {
       window.clearTimeout(timer);
     };
   }, [query, results]);
-  const suggestions = useMemo(
-    () => [...allTitles].sort((a, b) => b.rating - a.rating).slice(0, 8),
-    [],
-  );
+  const suggestions = useMemo(() => {
+    const pool = profile?.kids ? allTitles.filter(isKidsSafe) : allTitles;
+    return [...pool].sort((a, b) => b.rating - a.rating).slice(0, 8);
+  }, [profile?.kids]);
 
   return (
     <AnimatePresence>

@@ -89,6 +89,7 @@ export const generatedTitles: Title[] = (entries as Entry[]).map((entry) => {
     slug: entry.slug,
     tmdbId: entry.tmdbId,
     anilistId: entry.anilistId,
+    anime: Boolean(entry.anilistId) || (entry.genres.includes("Animation") && entry.kind === "series"),
     kind: entry.kind,
     name: entry.name,
     year: entry.year,

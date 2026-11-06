@@ -4,6 +4,19 @@ import type { Genre, Season, Title } from "@/lib/types";
 
 export const allTitles = titles;
 
+/** Genres that are safe for a kids profile. */
+const KIDS_GENRES: Genre[] = ["Family", "Animation", "Comedy", "Adventure", "Fantasy"];
+
+export function isKidsSafe(title: Title) {
+  if (title.genres.includes("Horror") || title.genres.includes("Crime")) return false;
+  if (!title.genres.some((g) => KIDS_GENRES.includes(g))) return false;
+  return !["18+", "TV-MA", "R"].includes(title.maturity);
+}
+
+export function animeTitles() {
+  return titles.filter((t) => t.anime);
+}
+
 const bySlug = new Map(titles.map((t) => [t.slug, t]));
 
 export function getTitle(slug: string): Title | undefined {

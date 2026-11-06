@@ -1,4 +1,5 @@
 import type { Row } from "@/lib/types";
+import { allTitles } from "@/lib/catalog";
 
 export const continueWatching: string[] = [
   "breaking-bad",
@@ -276,4 +277,56 @@ export const rows: Row[] = [
       "halloween",
     ],
   },
+];
+
+/** Rows derived from the live catalogue so the shelves never go stale. */
+function score(title: (typeof allTitles)[number]) {
+  return title.rating * 10 + title.match / 4 + (title.year >= 2024 ? 8 : 0);
+}
+
+const ranked = [...allTitles].sort((a, b) => score(b) - score(a));
+const topRated = [...allTitles].sort((a, b) => b.rating - a.rating);
+const fresh = [...allTitles].sort((a, b) => b.year - a.year);
+const anime = allTitles.filter((t) => t.anime);
+const animeMovies = anime.filter((t) => t.kind === "movie");
+
+export const dynamicRows: Row[] = [
+  {
+    id: "trending-today",
+    title: "Trending Today",
+    hint: "What everyone is watching right now",
+    slugs: ranked.slice(0, 16).map((t) => t.slug),
+  },
+  {
+    id: "top-rated",
+    title: "Top Rated",
+    hint: "The highest rated titles in the catalogue",
+    slugs: topRated.slice(0, 16).map((t) => t.slug),
+  },
+  {
+    id: "new-releases",
+    title: "New Releases",
+    hint: "Fresh additions this month",
+    slugs: fresh.slice(0, 16).map((t) => t.slug),
+  },
+  ...(anime.length >= 4
+    ? [
+        {
+          id: "anime-shelf",
+          title: "Anime",
+          hint: "Subbed and dubbed, straight from Japan",
+          slugs: anime.slice(0, 18).map((t) => t.slug),
+        } as Row,
+      ]
+    : []),
+  ...(animeMovies.length >= 3
+    ? [
+        {
+          id: "anime-films",
+          title: "Anime Films",
+          hint: "Feature-length animation",
+          slugs: animeMovies.slice(0, 14).map((t) => t.slug),
+        } as Row,
+      ]
+    : []),
 ];
