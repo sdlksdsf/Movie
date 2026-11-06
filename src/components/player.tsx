@@ -214,6 +214,26 @@ export function Player({
     syncSettings({});
   }, [syncSettings]);
 
+  /* FebBox UI cookie → unlocks the player's 4K cloud sources */
+  const pushFebboxToken = useCallback((token: string | null) => {
+    if (!token) return;
+    iframeRef.current?.contentWindow?.postMessage({ type: "CINELITE_SYNC_FEBBOX_TOKEN", token }, "*");
+  }, []);
+
+  useEffect(() => {
+    try {
+      const token = localStorage.getItem("nf.febbox");
+      if (token) {
+        const send = () => pushFebboxToken(token);
+        send();
+        const t = window.setTimeout(send, 2500);
+        return () => window.clearTimeout(t);
+      }
+    } catch {
+      /* ignore */
+    }
+  }, [pushFebboxToken]);
+
   /** chrome auto-hide */
   const poke = useCallback(() => {
     setChrome(true);
@@ -495,6 +515,22 @@ export function Player({
                             subtitle={item.hint}
                           />
                         ))}
+                        <MenuRow
+                          onClick={() => {
+                            const token = window.prompt("Paste your FebBox UI cookie token (unlocks 4K cloud streams)");
+                            if (!token) return;
+                            try {
+                              localStorage.setItem("nf.febbox", token.trim());
+                            } catch {
+                              /* ignore */
+                            }
+                            pushFebboxToken(token.trim());
+                            toast("FebBox token saved · 4K sources unlocked");
+                            setOpen(null);
+                          }}
+                          title="Add FebBox token"
+                          subtitle="Optional · unlocks 4K cloud"
+                        />
                       </>
                     )}
 
