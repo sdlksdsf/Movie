@@ -12,7 +12,6 @@ import {
 } from "@/components/icons";
 import { useStore } from "@/components/store";
 import { Wordmark } from "@/components/wordmark";
-import { backdropSrc, posterSrc } from "@/lib/catalog";
 import type { Season, Title } from "@/lib/types";
 import { cn } from "@/lib/cn";
 
@@ -117,7 +116,6 @@ export function Player({
   const [menu, setMenu] = useState<null | "server" | "quality" | "subs" | "episodes">(null);
   const [chrome, setChrome] = useState(true);
   const [started, setStarted] = useState(false);
-  const [dead, setDead] = useState(false);
 
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const hideTimer = useRef<number | null>(null);
@@ -135,7 +133,9 @@ export function Player({
       setQuality(q);
       qualityInitial.current = q;
     }
-    if (s && SERVERS.some((x) => x.id === s)) setServer(s);
+    const best = ls.get("nf.server.best") as ServerId | null;
+    if (best && SERVERS.some((x) => x.id === best)) setServer(best);
+    else if (s && SERVERS.some((x) => x.id === s)) setServer(s);
     if (sub) setSubtitles(sub);
   }, []);
 
@@ -167,6 +167,26 @@ export function Player({
   const currentSeason = seasons.find((s) => s.number === season);
   const episodeMeta = currentSeason?.episodes.find((e) => e.number === episode);
   const hasNext = title.kind === "series" && Boolean(currentSeason && episode < currentSeason.episodes.length);
+
+  /* ---- server selection: start with the last known-good one, fall back fast ---- */
+  const triedFallback = useRef(false);
+  const loadedRef = useRef(false);
+
+  const markServerGood = useCallback(
+    (id: ServerId) => {
+      if (ls.get("nf.server.best") !== id) ls.set("nf.server.best", id);
+    },
+    [],
+  );
+
+  const fallbackServer = useCallback(() => {
+    if (triedFallback.current) return;
+    triedFallback.current = true;
+    const other: ServerId = server === "viper" ? "archer" : "viper";
+    setServer(other);
+    ls.set("nf.server", other);
+    toast(`No signal — switched to ${other === "viper" ? "Viper" : "Archer"}`);
+  }, [server, toast]);
 
   /* ---- chrome auto hide ---- */
   const poke = useCallback(() => {
@@ -228,6 +248,25 @@ export function Player({
         return;
       }
 
+      if (data.event === "frameXTV:timeupdate") {
+        const current = Number(data.currentTime) || 0;
+        const total = Number(data.duration) || 0;
+        setStarted(true);
+        const now = Date.now();
+        if (now - savedAt.current > 4000 && total) {
+          savedAt.current = now;
+          setProgress(title.slug, {
+            season,
+            episode,
+            percent: Math.min(1, current / total),
+            seconds: current,
+            duration: total,
+            updated: now,
+          });
+        }
+        return;
+      }
+
       if (data.type !== "CINELITE_PLAYBACK_PROGRESS") return;
 
       const p = (data.payload ?? {}) as {
@@ -243,7 +282,6 @@ export function Player({
       const pct = Number(p.progress ?? (total ? (current / total) * 100 : 0)) || 0;
 
       setStarted(true);
-      setDead(false);
 
       const now = Date.now();
       if (now - savedAt.current > 4000 || p.completed) {
@@ -262,13 +300,24 @@ export function Player({
     return () => window.removeEventListener("message", onMessage);
   }, [router, setProgress, title.slug, season, episode]);
 
-  /* never leave a dead black screen */
+  /**
+   * The overlay is only a "finding a source" hint — it must vanish as soon as
+   * the frame loads (onLoad clears it below) and it must never sit on top of a
+   * playing stream. If the server stays silent we switch automatically.
+   */
   useEffect(() => {
     setStarted(false);
-    setDead(false);
-    const id = window.setTimeout(() => setDead(true), 14000);
-    return () => window.clearTimeout(id);
-  }, [src]);
+    loadedRef.current = false;
+    const quick = window.setTimeout(() => setStarted(true), 1800);
+    /* only recover when the frame never even loaded — never interrupt a live stream */
+    const silent = window.setTimeout(() => {
+      if (!loadedRef.current) fallbackServer();
+    }, 7000);
+    return () => {
+      window.clearTimeout(quick);
+      window.clearTimeout(silent);
+    };
+  }, [src, fallbackServer]);
 
   /* keyboard: only the things the embed cannot do itself */
   useEffect(() => {
@@ -296,7 +345,9 @@ export function Player({
   const changeServer = (next: ServerId) => {
     setServer(next);
     setMenu(null);
+    triedFallback.current = false;
     ls.set("nf.server", next);
+    ls.set("nf.server.best", next);
     toast(`Server · ${SERVERS.find((s) => s.id === next)?.label}`);
   };
 
@@ -312,9 +363,6 @@ export function Player({
     setMenu(null);
   };
 
-  const poster = artwork?.poster ?? posterSrc(title.slug);
-  const backdrop = artwork?.backdrop ?? artwork?.poster ?? backdropSrc(title.slug);
-
   return (
     <div className="fixed inset-0 z-[80] overflow-hidden bg-black text-white">
       <iframe
@@ -324,58 +372,32 @@ export function Player({
         allow="autoplay; fullscreen; encrypted-media; picture-in-picture; presentation"
         allowFullScreen
         referrerPolicy="origin"
-        onLoad={() => setDead(false)}
+        onLoad={() => {
+          loadedRef.current = true;
+          markServerGood(server);
+          window.setTimeout(() => setStarted(true), 400);
+        }}
         className="absolute inset-0 h-full w-full border-0"
       />
 
       {/* overlay is click-through except for the bar */}
       <div className="pointer-events-none absolute inset-0">
+        {/* slim "finding a source" hint — never covers the stream */}
         <AnimatePresence>
           {!started && (
             <motion.div
-              key="boot"
-              initial={{ opacity: 1 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.45 }}
-              className="absolute inset-0 z-10 grid place-items-center overflow-hidden"
+              key="hint"
+              initial={{ opacity: 0, y: -6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -6 }}
+              transition={{ duration: 0.25 }}
+              className="absolute left-1/2 top-3 z-30 -translate-x-1/2"
             >
-              <img
-                src={backdrop}
-                alt=""
-                aria-hidden
-                className="absolute inset-0 h-full w-full scale-105 object-cover opacity-40 blur-md"
-                onError={(event) => {
-                  const img = event.currentTarget;
-                  if (img.dataset.fallback) return;
-                  img.dataset.fallback = "1";
-                  img.src = poster;
-                }}
-              />
-              <div className="absolute inset-0 bg-black/55" />
-              <div className="relative flex flex-col items-center gap-6 px-6 text-center">
-                <Wordmark className="text-2xl md:text-3xl" asLink={false} />
-                <p className="max-w-xs text-sm leading-relaxed text-white/70">
-                  {dead
-                    ? "This stream is taking too long. Try switching the server from the bar above."
-                    : `Finding a source for ${title.name}…`}
-                </p>
-                <div className="h-[3px] w-48 overflow-hidden rounded-full bg-white/15">
-                  <motion.div
-                    className="h-full w-1/3 rounded-full bg-[#e50914]"
-                    animate={{ x: ["-110%", "320%"] }}
-                    transition={{ duration: 1.3, repeat: Infinity, ease: "easeInOut" }}
-                  />
-                </div>
-                {dead && server === "viper" && (
-                  <button
-                    type="button"
-                    onClick={() => changeServer("archer")}
-                    className="pointer-events-auto rounded bg-white px-5 py-2 text-sm font-semibold text-black"
-                  >
-                    Switch to Archer
-                  </button>
-                )}
+              <div className="flex items-center gap-2.5 rounded-full border border-white/10 bg-black/70 px-3.5 py-1.5 backdrop-blur-md">
+                <span className="h-3 w-3 animate-spin rounded-full border-[1.5px] border-white/25 border-t-[#e50914]" />
+                <span className="text-[11px] font-medium tracking-wide text-white/75">
+                  Finding a source… ({SERVERS.find((s) => s.id === server)?.label})
+                </span>
               </div>
             </motion.div>
           )}
