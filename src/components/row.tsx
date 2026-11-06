@@ -487,7 +487,7 @@ export function PosterTile({ title, className }: { title: Title; className?: str
       type="button"
       onClick={() => openTitle(title.slug)}
       className={cn(
-        "group relative aspect-[2/3] w-full overflow-hidden rounded-[4px] bg-[#222] text-left ring-1 ring-white/5 transition duration-300 hover:z-10 hover:ring-white/40",
+        "group relative aspect-[2/3] w-full overflow-hidden rounded-[4px] bg-[#222] text-left ring-1 ring-white/5 transition duration-300 will-change-transform hover:z-10 hover:scale-[1.03] hover:ring-white/40",
         className,
       )}
     >

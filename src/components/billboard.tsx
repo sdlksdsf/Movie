@@ -155,7 +155,7 @@ export function Billboard() {
       </div>
 
       {/* rotation indicators — vertical stack on the right edge */}
-      <div className="absolute right-3 top-1/2 z-10 flex -translate-y-1/2 flex-col items-center gap-2 md:right-6">
+      <div className="absolute right-3 top-1/2 z-10 hidden -translate-y-1/2 flex-col items-center gap-2 md:right-6 md:flex">
         {features.map((f, i) => (
           <button
             key={f.slug}

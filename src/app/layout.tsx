@@ -10,7 +10,6 @@ export const metadata: Metadata = {
   description:
     "A pixel-faithful Netflix experience: browse thousands of titles, hover to preview, and stream instantly in the built-in player.",
   applicationName: "Netflix",
-  themeColor: "#000000",
 };
 
 export const viewport: Viewport = {

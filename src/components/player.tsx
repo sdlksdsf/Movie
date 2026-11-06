@@ -169,7 +169,7 @@ export function Player({
           break;
         case "m":
           setMuted((m) => {
-            send(m ? "unmute" : "mute");
+            send(m ? "setVolume" : "mute", m ? { volume: 1 } : {});
             return !m;
           });
           break;
@@ -251,11 +251,11 @@ export function Player({
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.25 }}
-            className="absolute inset-0 z-20 flex flex-col justify-between"
+            className="pointer-events-none absolute inset-0 z-20 flex flex-col justify-between"
             style={{ background: "linear-gradient(to bottom, rgba(0,0,0,0.72), transparent 22%, transparent 66%, rgba(0,0,0,0.86))" }}
           >
             {/* top bar */}
-            <div className="flex items-center gap-3 px-4 py-4 md:px-8">
+            <div className="pointer-events-auto flex items-center gap-3 px-4 py-4 md:px-8">
               <button
                 type="button"
                 onClick={() => router.push("/")}
@@ -400,7 +400,7 @@ export function Player({
                   type="button"
                   aria-label={muted ? "Unmute" : "Mute"}
                   onClick={() => {
-                    send(muted ? "unmute" : "mute");
+                    send(muted ? "setVolume" : "mute", muted ? { volume: 1 } : {});
                     setMuted((m) => !m);
                   }}
                   className="grid h-9 w-9 place-items-center rounded-full text-white transition hover:bg-white/10"
@@ -419,7 +419,7 @@ export function Player({
             </div>
 
             {/* bottom bar */}
-            <div className="px-4 pb-5 md:px-8">
+            <div className="pointer-events-auto px-4 pb-5 md:px-8">
               <AnimatePresence>
                 {nearEnd && hasNext && (
                   <motion.div
