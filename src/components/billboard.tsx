@@ -79,7 +79,7 @@ export function Billboard() {
             key={active.slug}
             initial={{ opacity: 0, y: 26 }}
             animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -12 }}
+            exit={{ opacity: 0, y: -12, transition: { duration: 0.25 } }}
             transition={{ duration: 0.65, ease: [0.2, 0.8, 0.2, 1] }}
             className="max-w-[640px]"
           >
