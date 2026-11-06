@@ -1,0 +1,44 @@
+# dependencies
+node_modules
+.pnp
+.pnp.*
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# cache
+.cache/
+
+# misc
+.DS_Store
+*.pem
+.vscode
+.idea
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# env
+.env*.local
+.env
+
+# typescript
+*.tsbuildinfo
+
+# raw downloaded artwork (processed copies live in public/img)
+/raw-artwork
+/images-raw
+/image-search
+
+# vercel
+.vercel
+
+# arena
+.arena

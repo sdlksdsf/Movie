@@ -1,0 +1,215 @@
+@import "tailwindcss";
+
+@theme {
+  --color-netflix-red: #e50914;
+  --color-netflix-red-dark: #b0060f;
+  --color-ink: #141414;
+  --color-ink-deep: #000000;
+  --color-panel: #181818;
+  --color-panel-light: #232323;
+  --color-muted: #b3b3b3;
+  --color-dim: #808080;
+  --font-sans: "Inter Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-display: "Anton", "Inter Variable", ui-sans-serif, system-ui, sans-serif;
+  --ease-netflix: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+html {
+  scroll-behavior: smooth;
+  background-color: #141414;
+  color-scheme: dark;
+}
+
+body {
+  background: #141414;
+  overscroll-behavior-y: none;
+  color: #fff;
+  font-family: var(--font-sans);
+  font-feature-settings: "cv11", "ss01";
+  overflow-x: hidden;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+::selection {
+  background: rgba(229, 9, 20, 0.9);
+  color: #fff;
+}
+
+/* ------------------------------------------------------------------ */
+/* Scrollbars                                                          */
+/* ------------------------------------------------------------------ */
+.no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: #141414;
+}
+::-webkit-scrollbar-thumb {
+  background: #3a3a3a;
+  border-radius: 999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #585858;
+}
+
+/* ------------------------------------------------------------------ */
+/* Utilities                                                           */
+/* ------------------------------------------------------------------ */
+@utility text-balance {
+  text-wrap: balance;
+}
+
+@utility hide-caret {
+  caret-color: transparent;
+}
+
+/* Row arrows fade in on hover of the row */
+.row-shell:hover .row-arrow {
+  opacity: 1;
+  transform: translateY(-50%) scale(1);
+}
+
+/* The blurred, colour-washed background used behind posters */
+.art-blur {
+  filter: blur(28px) saturate(1.4) brightness(0.55);
+  transform: scale(1.35);
+}
+
+.card-shadow {
+  box-shadow: 0 24px 60px -12px rgba(0, 0, 0, 0.85);
+}
+
+/* NOFLIX-style tabular poster caption */
+.poster-caption {
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.85);
+}
+
+/* Focus ring that matches the brand */
+.focus-brand:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.9);
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
+/* Loading shimmer */
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.shimmer {
+  background: linear-gradient(100deg, #1c1c1c 20%, #2a2a2a 42%, #1c1c1c 62%);
+  background-size: 200% 100%;
+  animation: shimmer 1.6s linear infinite;
+}
+
+/* Hero "ken burns" drift */
+@keyframes kenburns {
+  0% {
+    transform: scale(1.03) translate3d(0, 0, 0);
+  }
+  100% {
+    transform: scale(1.12) translate3d(-1.2%, -1%, 0);
+  }
+}
+.kenburns {
+  animation: kenburns 22s ease-out forwards;
+  will-change: transform;
+}
+
+/* Vertical scroll hint pulse */
+@keyframes nudge {
+  0%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.65;
+  }
+  50% {
+    transform: translateY(6px);
+    opacity: 1;
+  }
+}
+.nudge {
+  animation: nudge 2.2s ease-in-out infinite;
+}
+
+/* The red light sweep on the splash logo */
+@keyframes sweep {
+  0% {
+    transform: translateX(-120%) skewX(-18deg);
+    opacity: 0;
+  }
+  35% {
+    opacity: 0.85;
+  }
+  100% {
+    transform: translateX(220%) skewX(-18deg);
+    opacity: 0;
+  }
+}
+.sweep::after {
+  content: "";
+  position: absolute;
+  inset: -20% -40%;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.05) 35%,
+    rgba(255, 255, 255, 0.75) 50%,
+    rgba(255, 255, 255, 0.05) 65%,
+    transparent 100%
+  );
+  animation: sweep 1.7s var(--ease-netflix) forwards;
+  mix-blend-mode: screen;
+  pointer-events: none;
+}
+
+/* Top-10 rank numerals */
+.rank-numeral {
+  font-family: var(--font-display);
+  line-height: 0.74;
+  color: #141414;
+  -webkit-text-stroke: 3px #4d4d4d;
+  text-shadow: 0 0 24px rgba(0, 0, 0, 0.6);
+  user-select: none;
+  letter-spacing: -0.04em;
+}
+
+/* Dialog / modal animations are handled by framer-motion, but keep a
+   CSS fallback for users with reduced motion. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* NOFLIX Sans-ish tracking for the wordmark */
+.wordmark {
+  font-family: var(--font-display);
+  letter-spacing: 0.04em;
+  transform: scaleY(1.08);
+  transform-origin: center;
+}
