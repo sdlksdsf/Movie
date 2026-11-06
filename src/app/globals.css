@@ -20,10 +20,13 @@
 
 html {
   scroll-behavior: smooth;
+  background-color: #141414;
+  color-scheme: dark;
 }
 
 body {
   background: #141414;
+  overscroll-behavior-y: none;
   color: #fff;
   font-family: var(--font-sans);
   font-feature-settings: "cv11", "ss01";

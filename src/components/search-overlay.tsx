@@ -26,6 +26,10 @@ const genreColors = [
 export function SearchOverlay() {
   const { searchOpen, setSearchOpen, openTitle } = useStore();
   const [query, setQuery] = useState("");
+  const [live, setLive] = useState<
+    Array<{ name: string; year?: number; kind: string; poster?: string; source: string; tmdbId?: number }>
+  >([]);
+  const [liveLoading, setLiveLoading] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -37,6 +41,36 @@ export function SearchOverlay() {
   }, [searchOpen]);
 
   const results = useMemo(() => searchTitles(query, 30), [query]);
+
+  // ask the metadata pipeline for anything missing from the bundled catalogue
+  useEffect(() => {
+    const term = query.trim();
+    if (term.length < 2) {
+      setLive([]);
+      setLiveLoading(false);
+      return;
+    }
+    setLiveLoading(true);
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => {
+      fetch(`/api/search?q=${encodeURIComponent(term)}&live=1`, { signal: controller.signal })
+        .then((r) => (r.ok ? r.json() : { external: [] }))
+        .then((data) => {
+          const known = new Set(results.map((t) => t.name.toLowerCase()));
+          setLive(
+            (data.external ?? []).filter(
+              (item: { name: string }) => !known.has(item.name.toLowerCase()),
+            ),
+          );
+        })
+        .catch(() => undefined)
+        .finally(() => setLiveLoading(false));
+    }, 260);
+    return () => {
+      controller.abort();
+      window.clearTimeout(timer);
+    };
+  }, [query, results]);
   const suggestions = useMemo(
     () => [...allTitles].sort((a, b) => b.rating - a.rating).slice(0, 8),
     [],
@@ -154,6 +188,70 @@ export function SearchOverlay() {
                       </motion.button>
                     ))}
                   </div>
+                )}
+                {live.length > 0 && (
+                  <div className="mt-12">
+                    <div className="mb-4 flex flex-wrap items-center gap-2">
+                      <h2 className="text-lg font-semibold text-white">More from the live catalogue</h2>
+                      {[...new Set(live.map((item) => item.source))].map((source) => (
+                        <span
+                          key={source}
+                          className="rounded-full border border-white/15 px-2.5 py-0.5 text-[10px] uppercase tracking-wider text-white/50"
+                        >
+                          {source}
+                        </span>
+                      ))}
+                    </div>
+                    <div className="grid grid-cols-3 gap-2.5 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6">
+                      {live.map((item, i) => {
+                        const href = item.tmdbId
+                          ? `/play/${item.tmdbId}?title=${encodeURIComponent(item.name)}&kind=${item.kind}&year=${item.year ?? ""}`
+                          : undefined;
+                        const inner = (
+                          <>
+                            <span className="relative block aspect-[2/3] w-full overflow-hidden rounded-[4px] bg-[#222] ring-1 ring-white/5 transition duration-300 group-hover:ring-white/40">
+                              {item.poster ? (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img
+                                  src={item.poster}
+                                  alt={item.name}
+                                  loading="lazy"
+                                  className="h-full w-full object-cover"
+                                />
+                              ) : (
+                                <span className="grid h-full place-items-center bg-gradient-to-br from-white/15 to-transparent px-2 text-center text-[11px] text-white/70">
+                                  {item.name}
+                                </span>
+                              )}
+                            </span>
+                            <span className="mt-1.5 block truncate text-xs text-white/80">{item.name}</span>
+                            <span className="block text-[10px] text-white/40">
+                              {item.year ?? ""} {href ? "· tap to play" : "· metadata only"}
+                            </span>
+                          </>
+                        );
+                        return href ? (
+                          <Link
+                            key={`${item.source}-${item.name}-${i}`}
+                            href={href}
+                            onClick={() => setSearchOpen(false)}
+                            className="group block"
+                          >
+                            {inner}
+                          </Link>
+                        ) : (
+                          <div key={`${item.source}-${item.name}-${i}`} className="group block opacity-70">
+                            {inner}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+                {liveLoading && live.length === 0 && (
+                  <p className="mt-10 text-xs uppercase tracking-[0.2em] text-white/30">
+                    Querying live providers…
+                  </p>
                 )}
               </>
             )}

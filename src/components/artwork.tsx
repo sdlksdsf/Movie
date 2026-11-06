@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { hasRemotePoster, localBackdrops, localPosters, remotePoster } from "@/data/artwork";
 import { backdropSrc, posterSrc } from "@/lib/catalog";
 import { cn } from "@/lib/cn";
@@ -50,17 +50,37 @@ export function Artwork({
 
   const [index, setIndex] = useState(0);
   const [loaded, setLoaded] = useState(false);
+  const holder = useRef<HTMLSpanElement>(null);
+  const src = sources[Math.min(index, sources.length - 1)];
 
   useEffect(() => {
     setIndex(0);
     setLoaded(false);
   }, [slug, kind]);
 
-  const src = sources[Math.min(index, sources.length - 1)];
+  /**
+   * Images that finish loading *before* React hydrates never fire `onLoad`,
+   * which used to leave banner/poster art stuck at opacity 0. Sweep for any
+   * already-decoded <img> once mounted (and again after paint) to be safe.
+   */
+  useEffect(() => {
+    const check = () => {
+      const img = holder.current?.querySelector("img");
+      if (img && img.complete && img.naturalWidth > 0) setLoaded(true);
+    };
+    check();
+    const raf = window.requestAnimationFrame(check);
+    const timer = window.setTimeout(check, 400);
+    return () => {
+      window.cancelAnimationFrame(raf);
+      window.clearTimeout(timer);
+    };
+  }, [src]);
+
   const failed = index >= sources.length;
 
   return (
-    <span className={cn("relative block h-full w-full overflow-hidden bg-[#1a1a1a]", className)}>
+    <span ref={holder} className={cn("relative block h-full w-full overflow-hidden bg-[#1a1a1a]", className)}>
       {/* colour wash placeholder — avoids a black flash while the art loads */}
       <span
         aria-hidden

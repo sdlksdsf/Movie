@@ -8,6 +8,51 @@ self-contained app.
 
 ---
 
+---
+
+## 🔌 Data pipeline & public API
+
+The catalogue is no longer a hand-maintained list. Titles flow in through a
+provider layer (`src/lib/providers.ts`) and are merged with the curated set.
+
+```
+providers                used for                          key needed
+------------------------ --------------------------------- ----------
+TMDB                     movies + series, posters, art     TMDB_API_KEY (free)
+TVMaze                   series, episodes, cast            none
+Jikan (MyAnimeList)      anime                             none
+IMDb suggestions         title search + poster art         none
+Cinemeta (Stremio)       tmdb/imdb ids + blurbs + art      none  ← sync script
+```
+
+**Sync more titles**
+
+```bash
+npm run sync-catalog                 # merge ~120 popular titles
+npm run sync-catalog -- --limit 400  # go bigger
+npm run sync-catalog -- --only series
+```
+
+The script resolves a verified `moviedb_id` + `imdb_id` for every title, writes
+`src/data/catalog.generated.json`, and the app merges it with the curated
+`src/data/titles.ts` at build time (artwork falls back to the IMDb CDN so no
+title is ever a grey box). Set `TMDB_API_KEY` in `.env.local` to unlock TMDB in
+the live search and in the provider status endpoint.
+
+**JSON API** (all cacheable, no auth)
+
+| Route | Returns |
+| --- | --- |
+| `GET /api/catalog?q=&kind=&genre=&limit=&offset=` | paginated catalogue |
+| `GET /api/catalog/[slug]` | full record + seasons + “More Like This” |
+| `GET /api/rows` | the home-page row composition |
+| `GET /api/search?q=&live=1` | local hits + live provider results |
+| `GET /api/providers` | which metadata sources are active |
+
+Anything the live providers surface can be played straight away —
+`/play/{tmdbId}?title=…&kind=…` renders the frameXTV player for titles that are
+not in the bundled catalogue yet.
+
 ## ✨ What's inside
 
 **Browsing**

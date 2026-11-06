@@ -1,4 +1,5 @@
 import { titles } from "@/data/titles";
+import { generatedArt } from "@/data/generated";
 import type { Genre, Season, Title } from "@/lib/types";
 
 export const allTitles = titles;
@@ -10,11 +11,11 @@ export function getTitle(slug: string): Title | undefined {
 }
 
 export function posterSrc(slug: string) {
-  return `/img/posters/${slug}.webp`;
+  return generatedArt[slug]?.poster ?? `/img/posters/${slug}.webp`;
 }
 
 export function backdropSrc(slug: string) {
-  return `/img/backdrops/${slug}.webp`;
+  return generatedArt[slug]?.backdrop ?? `/img/backdrops/${slug}.webp`;
 }
 
 export function formatRuntime(minutes?: number) {

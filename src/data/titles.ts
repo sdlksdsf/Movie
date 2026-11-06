@@ -1,4 +1,5 @@
 import type { Title } from "@/lib/types";
+import { generatedTitles } from "@/data/generated";
 
 /**
  * A curated, opinionated catalogue. Every entry carries a real TMDB id so the
@@ -1046,4 +1047,4 @@ const movies: Title[] = [
   },
 ];
 
-export const titles: Title[] = [...series, ...movies];
+export const titles: Title[] = [...series, ...movies, ...generatedTitles];

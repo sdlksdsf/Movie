@@ -21,7 +21,16 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" style={{ backgroundColor: "#141414", colorScheme: "dark" }}>
+      <head>
+        {/* paint the dark background before the stylesheet arrives — kills the white flash */}
+        <style
+          dangerouslySetInnerHTML={{
+            __html:
+              "html,body{background:#141414;color:#fff;margin:0;min-height:100%}#boot{position:fixed;inset:0;background:#141414;z-index:9999;transition:opacity .35s ease}",
+          }}
+        />
+      </head>
       <body className="min-h-screen bg-[#141414] text-white antialiased">
         <StoreProvider>
           <AppShell>{children}</AppShell>
