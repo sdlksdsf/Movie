@@ -338,28 +338,35 @@ export function PosterCard({
           </span>
         )}
 
-        <span className="pointer-events-none absolute inset-x-0 bottom-0 flex flex-col gap-1 bg-gradient-to-t from-black/90 via-black/40 to-transparent p-2 pt-8 opacity-100 transition-opacity duration-300">
+        {/* caption + meta — revealed on hover */}
+        <span
+          className={cn(
+            "pointer-events-none absolute inset-x-0 bottom-0 flex flex-col gap-1 bg-gradient-to-t from-black/95 via-black/55 to-transparent p-2 pt-10 opacity-0 transition-opacity duration-300 group-hover:opacity-100",
+            progress !== undefined && "pb-6",
+          )}
+        >
           <span className="line-clamp-2 text-[11.5px] font-semibold leading-tight text-white poster-caption">
             {title.name}
           </span>
-          {progress !== undefined ? (
-            <span className="flex items-center gap-1.5">
-              <span className="h-[3px] flex-1 overflow-hidden rounded-full bg-white/25">
-                <span
-                  className="block h-full rounded-full bg-netflix-red"
-                  style={{ width: `${Math.round(progress * 100)}%` }}
-                />
-              </span>
-              <span className="text-[9px] font-medium uppercase tracking-wide text-white/60">
-                {progressLabel}
-              </span>
-            </span>
-          ) : (
-            <span className="text-[9.5px] uppercase tracking-[0.12em] text-white/55">
-              {shortMeta(title)}
-            </span>
-          )}
+          <span className="text-[9.5px] uppercase tracking-[0.12em] text-white/55">
+            {shortMeta(title)}
+          </span>
         </span>
+
+        {/* always-visible resume progress */}
+        {progress !== undefined && (
+          <span className="pointer-events-none absolute inset-x-2 bottom-2 flex items-center gap-1.5">
+            <span className="h-[3px] flex-1 overflow-hidden rounded-full bg-white/25">
+              <span
+                className="block h-full rounded-full bg-netflix-red"
+                style={{ width: `${Math.round(progress * 100)}%` }}
+              />
+            </span>
+            <span className="text-[9px] font-medium uppercase tracking-wide text-white/65">
+              {progressLabel}
+            </span>
+          </span>
+        )}
       </button>
 
       {mounted &&

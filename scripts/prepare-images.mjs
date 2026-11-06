@@ -20,7 +20,8 @@ const backdropOut = path.join(root, "public/img/backdrops");
 const cacheDir = path.join(root, ".cache/artwork");
 
 const overrides = {
-  // slug: "exact-file-name-in-image-search"
+  // slug: "exact file name inside ./image-search"
+  "the-queens-gambit": "the-queen-s-gambit-poster-netflix-1.jpg",
 };
 
 const slugs = fs
