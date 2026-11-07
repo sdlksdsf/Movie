@@ -1,0 +1,480 @@
+[
+  {
+    "slug": "nocturne",
+    "tmdbId": 292741,
+    "imdbId": "tt26598805",
+    "kind": "series",
+    "name": "Nocturne",
+    "year": 2026,
+    "seasons": 1,
+    "genres": [
+      "Crime",
+      "Drama",
+      "Thriller"
+    ],
+    "rating": 8.1,
+    "overview": "Ex-soldier Jonah Lynn leaves Philadelphia for a quiet life. When serial killer Jurek Walter threatens his new home and family, Jonah must protect them \u2014 even as he sends his FBI agent daughter Saga to track the killer's last victim.",
+    "creator": "NOFLIX Series",
+    "cast": [
+      "Liev Schreiber",
+      "Zazie Beetz",
+      "Stephen Graham"
+    ],
+    "badge": "New Series",
+    "featured": true
+  },
+  {
+    "slug": "dexter-resurrection",
+    "tmdbId": 259909,
+    "imdbId": "tt33043892",
+    "kind": "series",
+    "name": "Dexter: Resurrection",
+    "year": 2025,
+    "seasons": 1,
+    "genres": [
+      "Crime",
+      "Drama",
+      "Mystery"
+    ],
+    "rating": 9.0,
+    "overview": "Dexter Morgan awakens from a coma and sets out for New York City, determined to find Harrison and make things right. But when Miami Metro's Angel Batista arrives with questions, Dexter realises his past is catching up with him fast.",
+    "creator": "Clyde Phillips",
+    "cast": [
+      "Michael C. Hall",
+      "Uma Thurman",
+      "Ntare Guma Mbaho Mwine"
+    ],
+    "badge": "New Season"
+  },
+  {
+    "slug": "friends",
+    "tmdbId": 1668,
+    "imdbId": "tt0108778",
+    "kind": "series",
+    "name": "Friends",
+    "year": 1994,
+    "seasons": 10,
+    "genres": [
+      "Comedy",
+      "Romance",
+      "Drama"
+    ],
+    "rating": 8.9,
+    "overview": "Six twenty-somethings share coffee, apartments, terrible dates and every awkward milestone of adult life in Manhattan. Three decades on, it is still the comfort watch the whole world agrees on.",
+    "creator": "David Crane & Marta Kauffman",
+    "cast": [
+      "Jennifer Aniston",
+      "Courteney Cox",
+      "Matthew Perry",
+      "Matt LeBlanc"
+    ],
+    "original": false
+  },
+  {
+    "slug": "attack-on-titan",
+    "tmdbId": 1429,
+    "imdbId": "tt2560140",
+    "kind": "series",
+    "name": "Attack on Titan",
+    "year": 2013,
+    "seasons": 4,
+    "genres": [
+      "Animation",
+      "Action",
+      "Fantasy"
+    ],
+    "rating": 9.1,
+    "overview": "Humanity lives caged inside enormous walls, hiding from the man-eating Titans outside. When the walls are breached, Eren Yeager swears revenge \u2014 and discovers the truth about what he really is.",
+    "creator": "Wit Studio / MAPPA",
+    "cast": [
+      "Yuki Kaji",
+      "Marina Inoue",
+      "Yui Ishikawa"
+    ],
+    "badge": "Final Season",
+    "featured": true,
+    "anilistId": 16498
+  },
+  {
+    "slug": "demon-slayer",
+    "tmdbId": 85937,
+    "imdbId": "tt9335498",
+    "kind": "series",
+    "name": "Demon Slayer",
+    "year": 2019,
+    "seasons": 4,
+    "genres": [
+      "Animation",
+      "Action",
+      "Fantasy"
+    ],
+    "rating": 8.7,
+    "overview": "Tanjiro Kamado comes home to find his family slaughtered and his sister turned into a demon. He joins the Demon Slayer Corps to find a cure \u2014 and the animation will ruin every other fight scene for you.",
+    "creator": "ufotable",
+    "cast": [
+      "Natsuki Hanae",
+      "Akari Kit\u014d",
+      "Yoshitsugu Matsuoka"
+    ],
+    "anilistId": 101922
+  },
+  {
+    "slug": "the-walking-dead",
+    "tmdbId": 1402,
+    "imdbId": "tt1520211",
+    "kind": "series",
+    "name": "The Walking Dead",
+    "year": 2010,
+    "seasons": 11,
+    "genres": [
+      "Horror",
+      "Drama",
+      "Thriller"
+    ],
+    "rating": 8.1,
+    "overview": "Sheriff Rick Grimes wakes from a coma into a world overrun by the dead, and rebuilds a group of survivors one loss at a time. The dead are dangerous \u2014 the living are worse.",
+    "creator": "Frank Darabont",
+    "cast": [
+      "Andrew Lincoln",
+      "Norman Reedus",
+      "Melissa McBride"
+    ]
+  },
+  {
+    "slug": "sherlock",
+    "tmdbId": 19885,
+    "imdbId": "tt1475582",
+    "kind": "series",
+    "name": "Sherlock",
+    "year": 2010,
+    "seasons": 4,
+    "genres": [
+      "Crime",
+      "Mystery",
+      "Drama"
+    ],
+    "rating": 9.1,
+    "overview": "A modern-day Sherlock Holmes solves impossible crimes from a flat on Baker Street, with Dr John Watson documenting every deduction. Witty, immaculate and almost unbearably tense.",
+    "creator": "Steven Moffat & Mark Gatiss",
+    "cast": [
+      "Benedict Cumberbatch",
+      "Martin Freeman",
+      "Andrew Scott"
+    ]
+  },
+  {
+    "slug": "better-call-saul",
+    "tmdbId": 60059,
+    "imdbId": "tt3032476",
+    "kind": "series",
+    "name": "Better Call Saul",
+    "year": 2015,
+    "seasons": 6,
+    "genres": [
+      "Crime",
+      "Drama"
+    ],
+    "rating": 9.0,
+    "overview": "Jimmy McGill is a struggling lawyer with a gift for the grift. The slow, gorgeous transformation of a decent man into Saul Goodman is one of the best-written tragedies television has produced.",
+    "creator": "Vince Gilligan & Peter Gould",
+    "cast": [
+      "Bob Odenkirk",
+      "Rhea Seehorn",
+      "Jonathan Banks",
+      "Giancarlo Esposito"
+    ]
+  },
+  {
+    "slug": "3-idiots",
+    "tmdbId": 20453,
+    "imdbId": "tt1187043",
+    "kind": "movie",
+    "name": "3 Idiots",
+    "year": 2009,
+    "runtime": 170,
+    "genres": [
+      "Comedy",
+      "Drama"
+    ],
+    "rating": 8.4,
+    "overview": "Two friends set out to find the brilliant, infuriating Rancho, the college roommate who taught them that chasing excellence beats chasing success. A Bollywood landmark about the price of an engineering degree.",
+    "creator": "Rajkumar Hirani",
+    "cast": [
+      "Aamir Khan",
+      "R. Madhavan",
+      "Sharman Joshi",
+      "Kareena Kapoor"
+    ],
+    "featured": true
+  },
+  {
+    "slug": "the-dog-stars",
+    "tmdbId": 1384216,
+    "imdbId": "tt21285562",
+    "kind": "movie",
+    "name": "The Dog Stars",
+    "year": 2026,
+    "runtime": 119,
+    "genres": [
+      "Action",
+      "Adventure",
+      "Drama"
+    ],
+    "rating": 6.5,
+    "overview": "In a post-apocalyptic world a virus has wiped out humanity. Survivor and pilot Hig lost his wife but kept his Cessna \u2014 and when a faint signal crackles through the static, he flies toward it.",
+    "creator": "Ridley Scott",
+    "cast": [
+      "Jacob Elordi",
+      "Margaret Qualley",
+      "Josh Brolin"
+    ],
+    "badge": "New Release",
+    "featured": true
+  },
+  {
+    "slug": "spider-man-brand-new-day",
+    "tmdbId": 969681,
+    "imdbId": "tt22084616",
+    "kind": "movie",
+    "name": "Spider-Man: Brand New Day",
+    "year": 2026,
+    "runtime": 145,
+    "genres": [
+      "Action",
+      "Adventure",
+      "Sci-Fi"
+    ],
+    "rating": 8.0,
+    "overview": "A forgotten Peter Parker lives alone as a full-time Spider-Man, until mounting pressure triggers a dangerous change in his powers and a powerful new enemy emerges from the wreckage of his old life.",
+    "creator": "Destin Daniel Cretton",
+    "cast": [
+      "Tom Holland",
+      "Zendaya",
+      "Mark Ruffalo"
+    ],
+    "badge": "New Release",
+    "featured": true
+  },
+  {
+    "slug": "hope",
+    "tmdbId": 1058424,
+    "imdbId": "tt27369017",
+    "kind": "movie",
+    "name": "Hope",
+    "year": 2026,
+    "runtime": 157,
+    "genres": [
+      "Horror",
+      "Thriller",
+      "Drama"
+    ],
+    "rating": 6.9,
+    "overview": "A mysterious discovery is made on the outskirts of a remote harbour town, and its residents find themselves in a desperate fight for survival against something they have never encountered before.",
+    "creator": "Na Hong-jin",
+    "cast": [
+      "Hwang Jung-min",
+      "Zo In-sung",
+      "Hoyeon"
+    ],
+    "badge": "New Release"
+  },
+  {
+    "slug": "resident-evil",
+    "tmdbId": 1423191,
+    "imdbId": "tt35538033",
+    "kind": "movie",
+    "name": "Resident Evil",
+    "year": 2026,
+    "runtime": 95,
+    "genres": [
+      "Horror",
+      "Action",
+      "Sci-Fi"
+    ],
+    "rating": 7.4,
+    "overview": "A hapless courier is tasked with delivering a package to a remote hospital and finds himself in the middle of an outbreak, fighting through hordes of mutated creatures just to survive the night.",
+    "creator": "Zach Cregger",
+    "cast": [
+      "Austin Abrams",
+      "Paul Walter Hauser",
+      "Zach Cherry"
+    ],
+    "badge": "New Release"
+  },
+  {
+    "slug": "backrooms",
+    "tmdbId": 1083381,
+    "imdbId": "tt26657236",
+    "kind": "movie",
+    "name": "Backrooms",
+    "year": 2026,
+    "runtime": 111,
+    "genres": [
+      "Horror",
+      "Sci-Fi",
+      "Thriller"
+    ],
+    "rating": 6.7,
+    "overview": "An angry architect chases the source of impossible power failures until a glowing gap opens in his basement. Beyond it lies a yellow maze that threatens his sanity, his friends and everything he loves.",
+    "creator": "Kane Parsons",
+    "cast": [
+      "Chiwetel Ejiofor",
+      "Renate Reinsve",
+      "Mark Duplass"
+    ]
+  },
+  {
+    "slug": "obsession",
+    "tmdbId": 1339713,
+    "imdbId": "tt37287335",
+    "kind": "movie",
+    "name": "Obsession",
+    "year": 2026,
+    "runtime": 109,
+    "genres": [
+      "Horror",
+      "Thriller"
+    ],
+    "rating": 7.8,
+    "overview": "After breaking the mysterious One Wish Willow to win his crush's heart, a hopeless romantic gets exactly what he asked for \u2014 and discovers that some desires come at a dark, sinister price.",
+    "creator": "Curry Barker",
+    "cast": [
+      "Michael Johnston",
+      "Inde Navarrette",
+      "Cooper Tomlinson"
+    ]
+  },
+  {
+    "slug": "verity",
+    "tmdbId": 1283515,
+    "imdbId": "tt32261958",
+    "kind": "movie",
+    "name": "Verity",
+    "year": 2026,
+    "runtime": 117,
+    "genres": [
+      "Mystery",
+      "Thriller",
+      "Drama"
+    ],
+    "rating": 7.6,
+    "overview": "Lowen Ashleigh is hired to ghostwrite the final novels of an injured bestselling author. Living in the Crawfords' home, she uncovers disturbing truths about the woman whose voice she is pretending to be.",
+    "creator": "Michael Showalter",
+    "cast": [
+      "Anne Hathaway",
+      "Dakota Johnson",
+      "Josh Hartnett"
+    ],
+    "badge": "New Release"
+  },
+  {
+    "slug": "forgotten-island",
+    "tmdbId": 1465063,
+    "imdbId": "tt36583977",
+    "kind": "movie",
+    "name": "Forgotten Island",
+    "year": 2026,
+    "runtime": 109,
+    "genres": [
+      "Animation",
+      "Adventure",
+      "Comedy"
+    ],
+    "rating": 7.7,
+    "overview": "Two best friends are stranded on the mystical world of Nakali, where their only way home might cost them the shared lifetime of memories that made them friends in the first place.",
+    "creator": "Joel Crawford & Januel P. Mercado",
+    "cast": [
+      "Dave Franco",
+      "Jenny Slate",
+      "Manny Jacinto"
+    ],
+    "badge": "New Release"
+  },
+  {
+    "slug": "the-nightmare-before-christmas",
+    "tmdbId": 9479,
+    "imdbId": "tt0107688",
+    "kind": "movie",
+    "name": "The Nightmare Before Christmas",
+    "year": 1993,
+    "runtime": 76,
+    "genres": [
+      "Animation",
+      "Fantasy",
+      "Family"
+    ],
+    "rating": 7.9,
+    "overview": "Jack Skellington, king of Halloween Town, discovers Christmas Town and tries to bring it home. His charming, catastrophic misunderstanding of the holiday is stop-motion perfection.",
+    "creator": "Henry Selick",
+    "cast": [
+      "Danny Elfman",
+      "Chris Sarandon",
+      "Catherine O'Hara"
+    ]
+  },
+  {
+    "slug": "coraline",
+    "tmdbId": 14836,
+    "imdbId": "tt0327597",
+    "kind": "movie",
+    "name": "Coraline",
+    "year": 2009,
+    "runtime": 100,
+    "genres": [
+      "Animation",
+      "Fantasy",
+      "Horror"
+    ],
+    "rating": 7.8,
+    "overview": "Wandering her family's creaking new house, a bored young girl finds a hidden door to a strangely idealised version of her life with attentive button-eyed parents. It seems too good to be true \u2014 because it is.",
+    "creator": "Henry Selick",
+    "cast": [
+      "Dakota Fanning",
+      "Teri Hatcher",
+      "John Hodgman"
+    ]
+  },
+  {
+    "slug": "halloween",
+    "tmdbId": 948,
+    "imdbId": "tt0077651",
+    "kind": "movie",
+    "name": "Halloween",
+    "year": 1978,
+    "runtime": 91,
+    "genres": [
+      "Horror",
+      "Thriller"
+    ],
+    "rating": 7.7,
+    "overview": "Fifteen years after murdering his sister on Halloween night 1963, Michael Myers escapes from a mental hospital and returns to Haddonfield, Illinois, to kill again. The template every slasher still copies.",
+    "creator": "John Carpenter",
+    "cast": [
+      "Donald Pleasence",
+      "Jamie Lee Curtis",
+      "Tony Moran"
+    ]
+  },
+  {
+    "slug": "hocus-pocus",
+    "tmdbId": 10439,
+    "imdbId": "tt0107120",
+    "kind": "movie",
+    "name": "Hocus Pocus",
+    "year": 1993,
+    "runtime": 96,
+    "genres": [
+      "Comedy",
+      "Family",
+      "Fantasy"
+    ],
+    "rating": 6.9,
+    "overview": "A teenage boy and his little sister move to Salem, where he accidentally awakens a trio of diabolical witches executed in the 17th century. Campy, chaotic Halloween comfort food.",
+    "creator": "Kenny Ortega",
+    "cast": [
+      "Bette Midler",
+      "Sarah Jessica Parker",
+      "Kathy Najimy"
+    ]
+  }
+]
