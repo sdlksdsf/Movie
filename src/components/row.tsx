@@ -16,7 +16,7 @@ import {
   ThumbUpIcon,
 } from "@/components/icons";
 import { useStore } from "@/components/store";
-import { getTitle, pseudoProgress, shortMeta, topTen } from "@/lib/catalog";
+import { getTitle, shortMeta, topTen } from "@/lib/catalog";
 import type { Row as RowType, Title } from "@/lib/types";
 import { cn } from "@/lib/cn";
 
@@ -218,8 +218,12 @@ export function ContinueRow({
         >
           {items.map((title) => {
             const p = progress[title.slug];
-            const percent = p ? p.percent : pseudoProgress(title.slug);
-            const label = p ? `S${p.season}:E${p.episode}` : title.kind === "series" ? "S1:E1" : "Film";
+            const percent = p?.percent;
+            const label = p
+              ? title.kind === "series"
+                ? `S${p.season}:E${p.episode}`
+                : `${Math.round(p.percent * 100)}% watched`
+              : undefined;
             return (
               <div key={title.slug} className="snap-start">
                 <PosterCard

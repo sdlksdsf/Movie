@@ -103,7 +103,10 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const toastId = useRef(0);
 
   useEffect(() => {
-    setProfileState(read<Profile | null>("nf.profile", null));
+    const savedProfile = read<Profile | null>("nf.profile", null);
+    setProfileState(savedProfile);
+    /* the title card animation runs on every visit, not just the first one */
+    if (savedProfile) setSplash(true);
     setProfilesState(read<Profile[]>("nf.profiles", []));
     setMyList(read<string[]>("nf.mylist", []));
     setProgressState(read<Record<string, WatchProgress>>("nf.progress", {}));

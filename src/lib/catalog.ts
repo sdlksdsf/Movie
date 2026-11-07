@@ -68,7 +68,7 @@ export function featuredTitles() {
  * The billboard rotation: a mix of what's hot right now rather than the same
  * single hand-picked title. Guarantees films, series and anime all appear.
  */
-export function heroTitles(limit = 10): Title[] {
+export function heroTitles(limit = 9): Title[] {
   const score = (t: Title) => {
     const fresh = t.year >= 2025 ? 26 : t.year >= 2023 ? 14 : 0;
     const badge = t.badge ? 10 : 0;
@@ -88,10 +88,11 @@ export function heroTitles(limit = 10): Title[] {
     }
   };
 
-  // lead with series, then films, then anime so the rotation always feels mixed
+  // an even split — 3 series, 3 films, 3 anime — so the hero rotation always
+  // moves through every corner of the catalogue instead of the same show
   take((t) => t.kind === "series" && !t.anime, 3);
-  take((t) => t.kind === "movie", 3);
-  take((t) => Boolean(t.anime), 2);
+  take((t) => t.kind === "movie" && !t.anime, 3);
+  take((t) => Boolean(t.anime), 3);
   take(() => true, limit);
 
   return picked.slice(0, limit);
