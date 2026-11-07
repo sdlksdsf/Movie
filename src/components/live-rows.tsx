@@ -69,17 +69,37 @@ export function LiveRows({ variant = "home" }: { variant?: "home" | "anime" }) {
   };
 
   const playAnime = async (item: LiveItem) => {
-    if (!item.malId) return;
-    setResolving(item.id);
-    const anilistId = await resolveAnilistId(item.malId);
-    setResolving(null);
-    if (!anilistId) {
+    let anilistId: number | undefined = item.anilistId;
+    if (!anilistId && item.malId) {
+      setResolving(item.id);
+      anilistId = (await resolveAnilistId(item.malId)) ?? undefined;
+      setResolving(null);
+    }
+    /* anime rows sometimes only know their TMDB id — the player resolves the
+       AniList id itself, so hand it everything we have and mark it as anime. */
+    if (!anilistId && !item.tmdbId) {
       toast("Could not resolve that anime's source id");
       return;
     }
-    router.push(
-      `/play/${anilistId}?title=${encodeURIComponent(item.name)}&kind=series&anime=1&year=${item.year ?? ""}&poster=${encodeURIComponent(item.poster ?? "")}`,
-    );
+    const path = item.tmdbId ?? anilistId;
+    const params = new URLSearchParams({ title: item.name, kind: "series", anime: "1" });
+    if (item.tmdbId) params.set("tmdb", String(item.tmdbId));
+    if (anilistId) params.set("anilist", String(anilistId));
+    if (item.year) params.set("year", String(item.year));
+    if (item.poster) params.set("poster", item.poster);
+    router.push(`/play/${path}?${params.toString()}`);
+  };
+
+  /** one entry point so anime always carries its AniList id (never the TMDB route) */
+  const playItem = async (item: LiveItem) => {
+    if (item.malId || item.anime) return playAnime(item);
+    if (item.tmdbId) {
+      router.push(
+        `/play/${item.tmdbId}?title=${encodeURIComponent(item.name)}&kind=${item.kind}&year=${item.year ?? ""}&poster=${encodeURIComponent(item.poster ?? "")}`,
+      );
+      return;
+    }
+    if (item.imdbId) return playSeries(item);
   };
 
   /** kids get animation / family only, and nothing horror, crime or adult-flagged */
@@ -135,17 +155,7 @@ export function LiveRows({ variant = "home" }: { variant?: "home" | "anime" }) {
                     disabled={!clickable}
                     whileHover={{ scale: 1.05, zIndex: 5 }}
                     transition={{ type: "spring", stiffness: 320, damping: 26 }}
-                    onClick={() => {
-                      if (item.tmdbId) {
-                        router.push(
-                          `/play/${item.tmdbId}?title=${encodeURIComponent(item.name)}&kind=${item.kind}&year=${item.year ?? ""}&poster=${encodeURIComponent(item.poster ?? "")}`,
-                        );
-                      } else if (item.malId) {
-                        void playAnime(item);
-                      } else if (item.imdbId) {
-                        void playSeries(item);
-                      }
-                    }}
+                    onClick={() => void playItem(item)}
                     className="group relative w-[128px] shrink-0 snap-start overflow-hidden rounded-[5px] bg-[#1b1b1b] text-left ring-1 ring-white/5 transition hover:ring-white/40 md:w-[152px]"
                   >
                     <span className="block aspect-[2/3] w-full overflow-hidden">

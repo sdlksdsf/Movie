@@ -25,6 +25,8 @@ const initial: Check[] = [
   { id: "framex", label: "frameXTV", detail: "Primary stream server", status: "idle" },
   { id: "cinelite", label: "CineLite", detail: "Backup stream server", status: "idle" },
   { id: "rivestream", label: "RiveStream", detail: "Fallback stream server", status: "idle" },
+  { id: "vidnest", label: "VidNest", detail: "Anime · sub & dub", status: "idle" },
+  { id: "aniembed", label: "AniEmbed", detail: "Anime · backup", status: "idle" },
   { id: "supabase", label: "Supabase", detail: "Profile + list sync", status: "idle" },
   { id: "jikan", label: "Jikan / MyAnimeList", detail: "Anime metadata", status: "idle" },
   { id: "tvmaze", label: "TVMaze", detail: "Episode metadata", status: "idle" },
@@ -108,6 +110,8 @@ export function DeveloperPanel() {
       ["framex", "https://framextv.cc/"],
       ["cinelite", "https://embed.cinelite.xyz/"],
       ["rivestream", "https://rivestream.ru/"],
+      ["vidnest", "https://vidnest.fun/"],
+      ["aniembed", "https://aniembed.se/"],
     ] as const) {
       tasks.push(
         (async () => {

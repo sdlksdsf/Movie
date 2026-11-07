@@ -321,12 +321,33 @@ export async function resolveAnilistId(malId: number): Promise<number | null> {
   }
 }
 
-export function playHref(item: LiveItem): string | null {
-  if (item.anilistId) {
-    return `/play/${item.anilistId}?title=${encodeURIComponent(item.name)}&kind=series&anime=1&year=${item.year ?? ""}`;
+/** Anything with enough ids to build a playable route. */
+export type PlayableRef = {
+  name: string;
+  year?: number;
+  kind: "movie" | "series";
+  poster?: string;
+  tmdbId?: number;
+  anilistId?: number;
+  malId?: number;
+  anime?: boolean;
+};
+
+export function playHref(item: PlayableRef): string | null {
+  const anime = Boolean(item.anime || item.anilistId || item.malId);
+  const path = item.tmdbId ?? item.anilistId ?? item.malId;
+  if (!path) return null;
+  const params = new URLSearchParams({
+    title: item.name,
+    kind: anime ? "series" : item.kind,
+  });
+  if (anime) {
+    params.set("anime", "1");
+    if (item.tmdbId) params.set("tmdb", String(item.tmdbId));
+    if (item.anilistId) params.set("anilist", String(item.anilistId));
+    if (item.malId) params.set("mal", String(item.malId));
   }
-  if (item.tmdbId) {
-    return `/play/${item.tmdbId}?title=${encodeURIComponent(item.name)}&kind=${item.kind}&year=${item.year ?? ""}`;
-  }
-  return null;
+  if (item.year) params.set("year", String(item.year));
+  if (item.poster) params.set("poster", item.poster);
+  return `/play/${path}?${params.toString()}`;
 }

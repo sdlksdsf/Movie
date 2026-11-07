@@ -28,9 +28,14 @@ import {
   otherPlayer,
   playerMeta,
   resolvePlayer,
+  playOrder,
+  isAnimeTitle,
+  playerMeta as metaOf,
+  type AudioTrack,
   type PlayerId,
   type Quality,
 } from "@/lib/players";
+import { anilistIdFor } from "@/lib/anime-ids";
 import type { Season, Title } from "@/lib/types";
 import { cn } from "@/lib/cn";
 
@@ -121,10 +126,19 @@ export function Player({
   artwork?: { poster?: string; backdrop?: string };
 }) {
   const router = useRouter();
-  const { setProgress, progress, toast } = useStore();
+  const { setProgress, progress, toast, settings, updateSettings } = useStore();
+  const audio: AudioTrack = settings.animeAudio ?? "sub";
 
   const [mounted, setMounted] = useState(false);
-  const [player, setPlayer] = useState<PlayerId>(() => resolvePlayer(DEFAULT_PLAYER, title));
+  const anime = isAnimeTitle(title);
+  const [anilistId, setAnilistId] = useState<number | null>(title.anilistId ?? null);
+  /* anime servers need an AniList id — hold the frame until we have one */
+  const [aniState, setAniState] = useState<"pending" | "ok" | "none">(() =>
+    anime && !title.anilistId ? "pending" : "ok",
+  );
+  const [player, setPlayer] = useState<PlayerId>(() =>
+    resolvePlayer(anime ? "vidnest" : DEFAULT_PLAYER, title),
+  );
   const [quality, setQuality] = useState<Quality>(DEFAULT_QUALITY);
   const [season, setSeason] = useState(initialSeason);
   const [episode, setEpisode] = useState(initialEpisode);
@@ -160,11 +174,52 @@ export function Player({
     pauseTimer.current = null;
   };
 
+  /* anime servers speak AniList ids — resolve one when the title lacks it */
+  useEffect(() => {
+    if (!anime) {
+      setAniState("ok");
+      return;
+    }
+    if (title.anilistId) {
+      setAnilistId(title.anilistId);
+      setAniState("ok");
+      return;
+    }
+    let alive = true;
+    setAniState("pending");
+    void anilistIdFor({
+      name: title.name,
+      year: title.year,
+      tmdbId: title.tmdbId,
+      malId: title.malId,
+    }).then((id) => {
+      if (!alive) return;
+      setAnilistId(id);
+      setAniState(id ? "ok" : "none");
+    });
+    return () => {
+      alive = false;
+    };
+  }, [anime, title.slug, title.name, title.year, title.tmdbId, title.anilistId, title.malId]);
+
+  /* no AniList match at all: fall back to the TMDB servers rather than a blank frame */
+  useEffect(() => {
+    if (aniState !== "none") return;
+    setPlayer((current) =>
+      canPlay(current, title, null) && current !== "aniembed"
+        ? current
+        : resolvePlayer(DEFAULT_PLAYER, title, null),
+    );
+  }, [aniState, title]);
+
   /* restore the user's chosen source + quality (default: frameXTV) */
   useEffect(() => {
     setMounted(true);
     const stored = ls.get("nf.player");
-    setPlayer(resolvePlayer(isPlayerId(stored) ? stored : DEFAULT_PLAYER, title));
+    const preferred = isPlayerId(stored) ? stored : DEFAULT_PLAYER;
+    /* anime never starts on a TMDB-only server; films/series keep the user's pick */
+    const start = anime && !metaOf(preferred).animeOnly ? "vidnest" : preferred;
+    setPlayer(resolvePlayer(start, title, title.anilistId ?? null));
     const q = ls.get("nf.quality");
     if (q && (QUALITIES as readonly string[]).includes(q)) setQuality(q as Quality);
     // legacy keys are deliberately ignored so everyone lands on frameXTV
@@ -182,11 +237,37 @@ export function Player({
       sameEpisode && stored.percent > 0.02 && stored.percent < 0.95 && stored.seconds
         ? stored.seconds
         : null;
-    return buildSrc({ player, title, season, episode, quality, resumeAt });
+    return buildSrc({
+      player,
+      title,
+      season,
+      episode,
+      quality,
+      resumeAt,
+      anilistId,
+      audio,
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [player, quality, title.tmdbId, title.anilistId, title.kind, season, episode, nonce]);
+  }, [
+    player,
+    quality,
+    title.tmdbId,
+    title.anilistId,
+    title.kind,
+    season,
+    episode,
+    nonce,
+    anilistId,
+    audio,
+  ]);
 
   const suggestions = useMemo(() => moreLikeThis(title, progress, 6), [title, progress]);
+
+  /* servers in this title's own failover order */
+  const orderedPlayers = useMemo(
+    () => playOrder(title).map((id) => PLAYERS.find((entry) => entry.id === id)).filter(Boolean) as typeof PLAYERS,
+    [title],
+  );
   const nextEp = useMemo(() => nextEpisodeOf(seasons, season, episode), [seasons, season, episode]);
   const currentSeason = seasons.find((s) => s.number === season);
 
@@ -194,16 +275,15 @@ export function Player({
 
   /** Walk the server chain: frameXTV → CineLite → RiveStream, each at most once. */
   const hardFallback = useCallback(() => {
-    const candidate = [...PLAYERS]
-      .sort((a, b) => a.rank - b.rank)
-      .map((entry) => entry.id)
-      .find((id) => id !== player && canPlay(id, title) && !tried.current.has(id));
+    const candidate = playOrder(title).find(
+      (id) => id !== player && canPlay(id, title, anilistId) && !tried.current.has(id),
+    );
     if (!candidate) return;
     tried.current.add(player);
     fallbackUsed.current = true;
     setPlayer(candidate);
     toast(`${playerMeta(player).label} didn't respond — trying ${playerMeta(candidate).label}`);
-  }, [player, title, toast]);
+  }, [player, title, toast, anilistId]);
 
   /* per-source reset: cheap, so switching feels instant */
   useEffect(() => {
@@ -444,7 +524,7 @@ export function Player({
         <div className="absolute inset-0 bg-black/80" />
       </div>
 
-      {mounted && (
+      {mounted && aniState !== "pending" && (
         <iframe
           ref={iframeRef}
           key={src}
@@ -465,7 +545,7 @@ export function Player({
 
       {/* thin load bar, top edge — instant, non-blocking feedback */}
       <AnimatePresence>
-        {!loaded && mounted && (
+        {!loaded && mounted && aniState !== "pending" && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -576,7 +656,7 @@ export function Player({
               <p className="px-2.5 pb-1 pt-1.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-white/40">
                 Player
               </p>
-              {PLAYERS.map((item) => {
+              {orderedPlayers.map((item) => {
                 const available = canPlayNow(item.id);
                 return (
                   <Row
@@ -598,6 +678,26 @@ export function Player({
                   />
                 );
               })}
+
+              {anime && (
+                <>
+                  <p className="mt-1 px-2.5 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-white/40">
+                    Anime audio
+                  </p>
+                  <Row
+                    active={audio === "sub"}
+                    title="Subbed"
+                    subtitle="Japanese audio · subtitles on"
+                    onClick={() => updateSettings({ animeAudio: "sub" })}
+                  />
+                  <Row
+                    active={audio === "dub"}
+                    title="Dubbed"
+                    subtitle="English audio track"
+                    onClick={() => updateSettings({ animeAudio: "dub" })}
+                  />
+                </>
+              )}
 
               {player === "cinelite" ? (
                 <>

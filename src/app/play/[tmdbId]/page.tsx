@@ -21,6 +21,12 @@ export default async function PlayPage({
     anime?: string;
     poster?: string;
     backdrop?: string;
+    /** explicit AniList id (anime servers) */
+    anilist?: string;
+    /** explicit TMDB id when the path carries an AniList id */
+    tmdb?: string;
+    /** MyAnimeList id (search results) — resolved to AniList in the player */
+    mal?: string;
   }>;
 }) {
   const { tmdbId } = await params;
@@ -28,14 +34,24 @@ export default async function PlayPage({
 
   const id = Number(tmdbId);
   const isAnime = query.anime === "1";
+  /* Anime can arrive as an AniList id in the path (live anime rows) or as a
+     TMDB id plus ?anilist=… (live mixed rows). Normalise both to a pair. */
+  const explicitAni = Number(query.anilist) || undefined;
+  const explicitMal = Number(query.mal) || undefined;
+  const explicitTmdb = Number(query.tmdb) || undefined;
+  /* the path is only an AniList id when no TMDB/MAL id was supplied alongside */
+  const pathIsAniid = isAnime && !explicitTmdb && !explicitMal;
+  const anilistResolved = explicitAni ?? (pathIsAniid ? id : undefined);
+  const tmdbResolved = explicitTmdb ?? (pathIsAniid || explicitMal ? 0 : id);
   const kind: "movie" | "series" = isAnime || query.kind === "series" ? "series" : "movie";
   const name = query.title?.slice(0, 120) || `Title ${Number.isFinite(id) ? id : ""}`;
   const year = Number(query.year) || new Date().getFullYear();
 
   const title: Title = {
     slug: `external-${id}`,
-    tmdbId: isAnime ? 0 : id,
-    anilistId: isAnime ? id : undefined,
+    tmdbId: tmdbResolved,
+    anilistId: anilistResolved,
+    malId: explicitMal,
     anime: isAnime,
     kind,
     name,
