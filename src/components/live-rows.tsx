@@ -11,6 +11,7 @@ import {
   resolveAnilistId,
   resolveTmdbId,
   tvmazeShelf,
+  validateKey,
   setKey,
   tmdbShelves,
   type LiveItem,
@@ -28,6 +29,7 @@ export function LiveRows({ variant = "home" }: { variant?: "home" | "anime" }) {
   const [loading, setLoading] = useState(true);
   const [keyDraft, setKeyDraft] = useState("");
   const [showKey, setShowKey] = useState(false);
+  const [checking, setChecking] = useState(false);
   const [resolving, setResolving] = useState<string | null>(null);
 
   const kids = Boolean(profile?.kids);
@@ -193,26 +195,41 @@ export function LiveRows({ variant = "home" }: { variant?: "home" | "anime" }) {
           </div>
 
           {showKey && (
-            <div className="mt-3 flex flex-wrap gap-2">
+            <div className="mt-3">
+              <p className="mb-2 text-[11px] text-white/40">
+                themoviedb.org → Settings → API → copy the <strong className="text-white/70">API Key (v3 auth)</strong>{" "}
+                or the <strong className="text-white/70">API Read Access Token</strong>. Both work here.
+              </p>
+              <div className="flex flex-wrap gap-2">
               <input
                 value={keyDraft}
                 onChange={(event) => setKeyDraft(event.target.value)}
-                placeholder="TMDB API key (v3)"
+                placeholder="TMDB v3 API Key (32 chars) or v4 Read Token (eyJ…)"
                 className="min-w-0 flex-1 rounded border border-white/15 bg-black/50 px-3 py-2 text-sm text-white outline-none placeholder:text-white/25 focus:border-[#e50914]"
               />
               <button
                 type="button"
-                onClick={() => {
+                disabled={checking}
+                onClick={async () => {
                   const clean = keyDraft.trim();
                   if (!clean) return;
+                  setChecking(true);
+                  const ok = await validateKey(clean);
+                  setChecking(false);
+                  if (!ok) {
+                    toast("TMDB rejected that key — paste the v3 API Key or the v4 Read Token");
+                    return;
+                  }
                   setKey(clean);
-                  toast("TMDB key saved · loading live catalogue");
+                  setShowKey(false);
+                  toast("TMDB connected · loading live catalogue");
                   void load();
                 }}
-                className="rounded bg-[#e50914] px-4 py-2 text-sm font-semibold text-white"
+                className="rounded bg-[#e50914] px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
               >
-                Load
+                {checking ? "Checking…" : "Connect"}
               </button>
+              </div>
             </div>
           )}
         </section>

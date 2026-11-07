@@ -93,12 +93,45 @@ function mapTmdb(item: TmdbItem, kind?: "movie" | "series", anime = false): Live
   };
 }
 
-async function tmdb(path: string, params: Record<string, string> = {}, key = getKey()) {
+/** TMDB hands out two credentials: a v3 key (32 chars) and a v4 read token (JWT). */
+const isBearer = (key: string) => key.startsWith("eyJ");
+
+async function tmdbFetch<T>(
+  path: string,
+  params: Record<string, string> = {},
+  key = getKey() || (process.env.NEXT_PUBLIC_TMDB_KEY ?? ""),
+): Promise<T | null> {
+  if (!key) return null;
   const url = new URL(`https://api.themoviedb.org/3${path}`);
-  url.searchParams.set("api_key", key || (process.env.NEXT_PUBLIC_TMDB_KEY ?? ""));
   url.searchParams.set("language", "en-US");
   Object.entries(params).forEach(([k, v]) => url.searchParams.set(k, v));
-  return json<{ results?: TmdbItem[] }>(url.toString());
+  if (!isBearer(key)) url.searchParams.set("api_key", key);
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 9000);
+  try {
+    const res = await fetch(url.toString(), {
+      signal: controller.signal,
+      headers: {
+        accept: "application/json",
+        ...(isBearer(key) ? { authorization: `Bearer ${key}` } : {}),
+      },
+    });
+    if (!res.ok) return null;
+    return (await res.json()) as T;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** Returns true when TMDB accepts the credential — used before we save it. */
+export async function validateKey(key: string): Promise<boolean> {
+  const clean = key.trim();
+  if (!clean) return false;
+  const config = await tmdbFetch<{ images?: unknown }>("/configuration", {}, clean);
+  return Boolean(config?.images);
 }
 
 export type Shelf = { id: string; title: string; hint?: string; items: LiveItem[] };
@@ -109,11 +142,15 @@ export async function tmdbShelves(): Promise<Shelf[]> {
   if (!key) return [];
 
   const [trending, movies, series, anime, topRated] = await Promise.all([
-    tmdb("/trending/all/week", { page: "1" }, key),
-    tmdb("/movie/popular", { page: "1" }, key),
-    tmdb("/tv/popular", { page: "1" }, key),
-    tmdb("/discover/tv", { with_genres: "16", with_original_language: "ja", sort_by: "popularity.desc", page: "1" }, key),
-    tmdb("/movie/top_rated", { page: "1" }, key),
+    tmdbFetch<{ results?: TmdbItem[] }>("/trending/all/week", { page: "1" }, key),
+    tmdbFetch<{ results?: TmdbItem[] }>("/movie/popular", { page: "1" }, key),
+    tmdbFetch<{ results?: TmdbItem[] }>("/tv/popular", { page: "1" }, key),
+    tmdbFetch<{ results?: TmdbItem[] }>(
+      "/discover/tv",
+      { with_genres: "16", with_original_language: "ja", sort_by: "popularity.desc", page: "1" },
+      key,
+    ),
+    tmdbFetch<{ results?: TmdbItem[] }>("/movie/top_rated", { page: "1" }, key),
   ]);
 
   const shelves: Shelf[] = [
@@ -121,31 +158,17 @@ export async function tmdbShelves(): Promise<Shelf[]> {
       id: "live-trending",
       title: "Trending This Week",
       hint: "Live from TMDB",
-      items: (trending?.results ?? [])
-        .filter((i) => i.media_type !== "person")
-        .map((i) => mapTmdb(i)),
+      items: (trending?.results ?? []).filter((i) => i.media_type !== "person").map((i) => mapTmdb(i)),
     },
-    {
-      id: "live-movies",
-      title: "Popular Movies Right Now",
-      items: (movies?.results ?? []).map((i) => mapTmdb(i, "movie")),
-    },
-    {
-      id: "live-series",
-      title: "Popular Series Right Now",
-      items: (series?.results ?? []).map((i) => mapTmdb(i, "series")),
-    },
+    { id: "live-movies", title: "Popular Movies Right Now", items: (movies?.results ?? []).map((i) => mapTmdb(i, "movie")) },
+    { id: "live-series", title: "Popular Series Right Now", items: (series?.results ?? []).map((i) => mapTmdb(i, "series")) },
     {
       id: "live-anime",
       title: "Trending Anime",
       hint: "Japanese animation, freshly ranked",
       items: (anime?.results ?? []).map((i) => mapTmdb(i, "series", true)),
     },
-    {
-      id: "live-top-rated",
-      title: "All-Time Top Rated",
-      items: (topRated?.results ?? []).map((i) => mapTmdb(i, "movie")),
-    },
+    { id: "live-top-rated", title: "All-Time Top Rated", items: (topRated?.results ?? []).map((i) => mapTmdb(i, "movie")) },
   ];
 
   return shelves.filter((shelf) => shelf.items.length > 0);
