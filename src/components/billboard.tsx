@@ -67,7 +67,7 @@ export function Billboard() {
   const saved = inList(active.slug);
 
   return (
-    <section className="relative h-[88svh] min-h-[560px] w-full overflow-hidden">
+    <section className="relative h-[74svh] min-h-[440px] w-full overflow-hidden md:h-[88svh] md:min-h-[560px]">
       {/* per-slide backdrop — cross-fades, never leaves a black hole */}
       <AnimatePresence initial={false}>
         <motion.div

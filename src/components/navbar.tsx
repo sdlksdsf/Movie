@@ -15,9 +15,18 @@ const links = [
   { href: "/", label: "Home" },
   { href: "/tv-shows", label: "TV Shows" },
   { href: "/movies", label: "Movies" },
+  { href: "/anime", label: "Anime" },
   { href: "/new-popular", label: "New & Popular" },
+  { href: "/browse", label: "Browse" },
   { href: "/my-list", label: "My List" },
-  { href: "/browse", label: "Browse by Languages" },
+];
+
+const mobileLinks = [
+  { href: "/tv-shows", label: "TV Shows" },
+  { href: "/movies", label: "Movies" },
+  { href: "/anime", label: "Anime" },
+  { href: "/browse", label: "Browse" },
+  { href: "/my-list", label: "My List" },
 ];
 
 export function Navbar() {
@@ -70,7 +79,7 @@ export function Navbar() {
       <nav className="mx-auto flex h-[68px] w-full items-center gap-4 px-4 md:gap-7 md:px-12">
         <Wordmark className="text-[22px] md:text-[26px]" />
 
-        <ul className="hidden items-center gap-6 text-[13.5px] lg:flex">
+        <ul className="hidden items-center gap-5 text-[13.5px] xl:gap-6 lg:flex">
           {links.map((link) => {
             const active = link.href === "/" ? pathname === "/" : pathname.startsWith(link.href);
             return (
@@ -89,27 +98,24 @@ export function Navbar() {
           })}
         </ul>
 
-        {/* mobile: compact links */}
-        <ul className="no-scrollbar flex flex-1 items-center gap-4 overflow-x-auto text-[13px] lg:hidden">
-          <li>
-            <Link href="/tv-shows" className="whitespace-nowrap text-white/80">
-              TV Shows
-            </Link>
-          </li>
-          <li>
-            <Link href="/movies" className="whitespace-nowrap text-white/80">
-              Movies
-            </Link>
-          </li>
-          <li>
-            <Link href="/anime" className="whitespace-nowrap text-white/80">
-              Anime
-            </Link>
-
-            <Link href="/my-list" className="whitespace-nowrap text-white/80">
-              My List
-            </Link>
-          </li>
+        {/* mobile: compact links — one <li> per link so they can never collide */}
+        <ul className="no-scrollbar -mx-1 flex flex-1 items-center gap-5 overflow-x-auto px-1 text-[13px] lg:hidden">
+          {mobileLinks.map((link) => {
+            const active = pathname.startsWith(link.href);
+            return (
+              <li key={link.href} className="shrink-0">
+                <Link
+                  href={link.href}
+                  className={cn(
+                    "whitespace-nowrap transition-colors",
+                    active ? "font-semibold text-white" : "text-white/80 hover:text-white",
+                  )}
+                >
+                  {link.label}
+                </Link>
+              </li>
+            );
+          })}
         </ul>
 
         <div className="ml-auto flex items-center gap-3 md:gap-5">

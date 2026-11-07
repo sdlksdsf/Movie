@@ -1,15 +1,19 @@
 import type { Metadata } from "next";
-import { BrowseGrid } from "@/components/browse-grid";
+import { LiveCatalogue } from "@/components/live-catalogue";
 import { allTitles } from "@/lib/catalog";
 
-export const metadata: Metadata = { title: "Browse All Titles — NOFLIX" };
+export const metadata: Metadata = { title: "Browse the full catalogue — NOFLIX" };
 
 export default function Page() {
   return (
-    <BrowseGrid
-      titles={allTitles}
-      heading="Browse All Titles"
-      subheading={`Every film and series in the catalogue — ${allTitles.length} titles across ${new Set(allTitles.flatMap((t) => t.genres)).size} genres.`}
-    />
+    <>
+      <LiveCatalogue />
+      <noscript>
+        <p className="px-4 pb-10 text-center text-sm text-white/60">
+          {allTitles.length} titles are in the bundled catalogue; enable JavaScript to browse the
+          live library.
+        </p>
+      </noscript>
+    </>
   );
 }
