@@ -1,15 +1,16 @@
 /**
- * The TMDB credential, baked in.
+ * The TMDB credential.
  *
- * The site ships with a working key so nobody is ever asked to paste one.
- * `NEXT_PUBLIC_TMDB_KEY` still wins if it is set at build time (useful for a
- * deployment that wants to rotate credentials), and a key typed into the old
- * settings box still takes precedence at runtime — but the fallback below is
- * what makes trailers, episode stills and the live shelves work out of the box.
+ * The key is supplied by the deployment (Vercel environment variable
+ * `NEXT_PUBLIC_TMDB_KEY`) so no credential is committed to this repository.
+ * Nothing in the UI ever asks a visitor for a key — if one is missing the app
+ * simply falls back to its bundled catalogue and hides the live rows.
  */
-export const BAKED_TMDB_KEY = "18b99b7ed74f1f6407089a3471cd6e5a";
 
-export const TMDB_API_KEY = (process.env.NEXT_PUBLIC_TMDB_KEY ?? "").trim() || BAKED_TMDB_KEY;
+export const TMDB_API_KEY = (process.env.NEXT_PUBLIC_TMDB_KEY ?? "").trim();
+
+/** True when a TMDB credential is available for live shelves and trailers. */
+export const hasTmdbKey = Boolean(TMDB_API_KEY);
 
 /** TMDB accepts a v3 key (32 chars) or a v4 read token (JWT starting `eyJ`). */
 export const isBearerToken = (key: string) => key.trim().startsWith("eyJ");
