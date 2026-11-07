@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { allTitles, genreFromSlug, searchTitles } from "@/lib/catalog";
 import { serializeTitle } from "@/lib/api-serialize";
 
-export const dynamic = "force-static";
+export const dynamic = "force-dynamic";
 
 /**
  * GET /api/catalog?q=&kind=&genre=&limit=&offset=
