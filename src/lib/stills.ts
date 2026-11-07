@@ -7,11 +7,11 @@
  * silently fall back to tinted series artwork when a season has no stills.
  */
 
+import { TMDB_API_KEY } from "@/lib/tmdb-key";
+
 const ENDPOINT = "https://api.themoviedb.org/3";
 const IMAGE = "https://image.tmdb.org/t/p/w300";
-const BAKED_KEY = "18b99b7ed74f1f6407089a3471cd6e5a";
-
-const apiKey = () => process.env.NEXT_PUBLIC_TMDB_KEY || BAKED_KEY;
+const apiKey = () => TMDB_API_KEY;
 
 export type StillMap = Record<number, string>;
 

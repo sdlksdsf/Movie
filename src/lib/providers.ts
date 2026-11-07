@@ -1,5 +1,7 @@
 import "server-only";
 
+import { TMDB_API_KEY } from "@/lib/tmdb-key";
+
 /**
  * Multi-provider metadata pipeline.
  *
@@ -21,11 +23,8 @@ export type ExternalTitle = {
   rating?: number;
 };
 
-const TMDB_KEY =
-  process.env.TMDB_API_KEY ??
-  process.env.NEXT_PUBLIC_TMDB_API_KEY ??
-  process.env.TMDB_BEARER ??
-  "";
+/* the site ships with a working key, so TMDB is always enabled */
+const TMDB_KEY = process.env.TMDB_API_KEY ?? process.env.NEXT_PUBLIC_TMDB_API_KEY ?? TMDB_API_KEY;
 
 export const providers = {
   tmdb: {

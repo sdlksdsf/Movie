@@ -5,14 +5,11 @@ import { useCallback, useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { useStore } from "@/components/store";
 import {
-  getKey,
   hasKey,
   jikanShelf,
   resolveAnilistId,
   resolveTmdbId,
   tvmazeShelf,
-  validateKey,
-  setKey,
   tmdbShelves,
   type LiveItem,
   type Shelf,
@@ -27,9 +24,6 @@ export function LiveRows({ variant = "home" }: { variant?: "home" | "anime" }) {
   const { toast, profile } = useStore();
   const [shelves, setShelves] = useState<Shelf[]>([]);
   const [loading, setLoading] = useState(true);
-  const [keyDraft, setKeyDraft] = useState("");
-  const [showKey, setShowKey] = useState(false);
-  const [checking, setChecking] = useState(false);
   const [resolving, setResolving] = useState<string | null>(null);
 
   const kids = Boolean(profile?.kids);
@@ -176,64 +170,6 @@ export function LiveRows({ variant = "home" }: { variant?: "home" | "anime" }) {
         );
       })}
 
-      {!hasKey() && (
-        <section className="mx-4 mb-10 rounded-lg border border-white/10 bg-white/[0.03] p-4 md:mx-12">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <p className="text-sm font-semibold text-white">Unlock the full catalogue</p>
-              <p className="text-[12px] text-white/50">
-                Add a free TMDB API key and this page streams thousands of movies, series and anime live.
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => setShowKey((value) => !value)}
-              className="rounded bg-white px-4 py-2 text-[12px] font-semibold text-black transition hover:bg-white/85"
-            >
-              {showKey ? "Hide" : "Add key"}
-            </button>
-          </div>
-
-          {showKey && (
-            <div className="mt-3">
-              <p className="mb-2 text-[11px] text-white/40">
-                themoviedb.org → Settings → API → copy the <strong className="text-white/70">API Key (v3 auth)</strong>{" "}
-                or the <strong className="text-white/70">API Read Access Token</strong>. Both work here.
-              </p>
-              <div className="flex flex-wrap gap-2">
-              <input
-                value={keyDraft}
-                onChange={(event) => setKeyDraft(event.target.value)}
-                placeholder="TMDB v3 API Key (32 chars) or v4 Read Token (eyJ…)"
-                className="min-w-0 flex-1 rounded border border-white/15 bg-black/50 px-3 py-2 text-sm text-white outline-none placeholder:text-white/25 focus:border-[#e50914]"
-              />
-              <button
-                type="button"
-                disabled={checking}
-                onClick={async () => {
-                  const clean = keyDraft.trim();
-                  if (!clean) return;
-                  setChecking(true);
-                  const ok = await validateKey(clean);
-                  setChecking(false);
-                  if (!ok) {
-                    toast("TMDB rejected that key — paste the v3 API Key or the v4 Read Token");
-                    return;
-                  }
-                  setKey(clean);
-                  setShowKey(false);
-                  toast("TMDB connected · loading live catalogue");
-                  void load();
-                }}
-                className="rounded bg-[#e50914] px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
-              >
-                {checking ? "Checking…" : "Connect"}
-              </button>
-              </div>
-            </div>
-          )}
-        </section>
-      )}
     </>
   );
 }
