@@ -115,19 +115,33 @@ async function tmdb(
 type PagePlan = { path: string; kind: "movie" | "series"; params: Record<string, string> };
 
 function planFor(tab: CatalogueTab): PagePlan[] {
+  /* only titles that already exist, with a real audience — an unreleased
+     blockbuster looks great on a poster wall but nothing can play it yet, and
+     vote_count keeps out the no-name filler */
+  const today = new Date().toISOString().slice(0, 10);
+  const quality = { sort_by: "popularity.desc", "vote_count.gte": "50" };
+
   if (tab === "movie") {
     return [
-      { path: "/discover/movie", kind: "movie", params: { sort_by: "popularity.desc" } },
+      {
+        path: "/discover/movie",
+        kind: "movie",
+        params: { ...quality, "primary_release_date.lte": today },
+      },
     ];
   }
   if (tab === "series") {
     return [
-      { path: "/discover/tv", kind: "series", params: { sort_by: "popularity.desc" } },
+      {
+        path: "/discover/tv",
+        kind: "series",
+        params: { ...quality, "first_air_date.lte": today },
+      },
     ];
   }
   /* anime: Japanese animation only, series and films interleaved */
   const animeParams = {
-    sort_by: "popularity.desc",
+    ...quality,
     with_genres: "16",
     with_origin_country: "JP",
   };
