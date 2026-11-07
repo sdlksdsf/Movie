@@ -64,6 +64,39 @@ export function featuredTitles() {
   return titles.filter((t) => t.featured);
 }
 
+/**
+ * The billboard rotation: a mix of what's hot right now rather than the same
+ * single hand-picked title. Guarantees films, series and anime all appear.
+ */
+export function heroTitles(limit = 10): Title[] {
+  const score = (t: Title) => {
+    const fresh = t.year >= 2025 ? 26 : t.year >= 2023 ? 14 : 0;
+    const badge = t.badge ? 10 : 0;
+    return t.rating * 7 + t.match / 5 + fresh + badge + (t.featured === true ? 18 : 0);
+  };
+
+  const pool = [...titles].sort((a, b) => score(b) - score(a));
+  const picked: Title[] = [];
+  const take = (predicate: (t: Title) => boolean, count: number) => {
+    let added = 0;
+    for (const title of pool) {
+      if (added >= count) break;
+      if (picked.some((p) => p.slug === title.slug)) continue;
+      if (!predicate(title)) continue;
+      picked.push(title);
+      added += 1;
+    }
+  };
+
+  // lead with series, then films, then anime so the rotation always feels mixed
+  take((t) => t.kind === "series" && !t.anime, 3);
+  take((t) => t.kind === "movie", 3);
+  take((t) => Boolean(t.anime), 2);
+  take(() => true, limit);
+
+  return picked.slice(0, limit);
+}
+
 export function topTen() {
   return titles
     .filter((t) => typeof t.top10 === "number")

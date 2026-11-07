@@ -260,7 +260,13 @@ function ModalBody({
                     <span className="w-5 shrink-0 text-center text-sm text-white/50">{ep.number}</span>
                     <span className="relative h-12 w-[84px] shrink-0 overflow-hidden rounded bg-[#222] md:h-14 md:w-[100px]">
                       <span className="absolute inset-0 opacity-70">
-                        <Artwork slug={title.slug} name="" accent={title.accent} sizes="120px" />
+                        <Artwork
+                          slug={title.slug}
+                          name=""
+                          kind="backdrop"
+                          accent={title.accent}
+                          sizes="160px"
+                        />
                       </span>
                       <span className="absolute inset-0 grid place-items-center bg-black/35 opacity-0 transition group-hover:opacity-100">
                         <span className="grid h-8 w-8 place-items-center rounded-full border-2 border-white text-white">

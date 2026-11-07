@@ -130,7 +130,13 @@ export default async function TitlePage({ params }: { params: Promise<{ slug: st
                     >
                       <span className="w-4 text-center text-sm text-white/40">{ep.number}</span>
                       <span className="relative h-12 w-20 shrink-0 overflow-hidden rounded bg-[#222]">
-                        <Artwork slug={title.slug} name="" accent={title.accent} sizes="100px" />
+                        <Artwork
+                          slug={title.slug}
+                          name=""
+                          kind="backdrop"
+                          accent={title.accent}
+                          sizes="140px"
+                        />
                       </span>
                       <span className="min-w-0 flex-1">
                         <span className="flex items-baseline justify-between gap-2">

@@ -1,18 +1,18 @@
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Artwork } from "@/components/artwork";
 import { CheckIcon, InfoIcon, PlayIcon, PlusIcon } from "@/components/icons";
 import { useStore } from "@/components/store";
-import { featuredTitles, shortMeta } from "@/lib/catalog";
+import { heroTitles, shortMeta } from "@/lib/catalog";
 import { cn } from "@/lib/cn";
 
 const ROTATE_MS = 11_000;
 
 export function Billboard() {
-  const features = featuredTitles().slice(0, 6);
+  const features = useMemo(() => heroTitles(8), []);
   const [index, setIndex] = useState(0);
   const [paused, setPaused] = useState(false);
   const router = useRouter();
@@ -27,8 +27,13 @@ export function Billboard() {
   );
 
   useEffect(() => {
-    if (paused || features.length < 2) return;
-    timer.current = window.setTimeout(() => go(index + 1), ROTATE_MS);
+    if (features.length < 2) return;
+    // hovered? keep the current slide but never stall the rotation for good
+    const delay = paused ? 8000 : ROTATE_MS;
+    timer.current = window.setTimeout(() => {
+      if (paused) setPaused(false);
+      go(index + 1);
+    }, delay);
     return () => {
       if (timer.current) window.clearTimeout(timer.current);
     };

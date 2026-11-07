@@ -4,6 +4,7 @@ import { Billboard } from "@/components/billboard";
 import { Footer } from "@/components/footer";
 import { Navbar } from "@/components/navbar";
 import { LiveRows } from "@/components/live-rows";
+import { PersonalRows } from "@/components/personal-rows";
 import { Row, ContinueRow } from "@/components/row";
 import { useStore } from "@/components/store";
 import { continueWatching, dynamicRows, rows } from "@/data/rows";
@@ -50,6 +51,8 @@ export function HomePage() {
               showProgress={false}
             />
           )}
+
+          <PersonalRows />
 
           <LiveRows />
 

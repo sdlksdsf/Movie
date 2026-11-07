@@ -3,9 +3,20 @@
 import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeftIcon, CheckIcon, ChevronDownIcon, NextIcon, SparkIcon } from "@/components/icons";
+import {
+  ArrowLeftIcon,
+  CheckIcon,
+  ChevronDownIcon,
+  CloseIcon,
+  NextIcon,
+  PlayIcon,
+  SparkIcon,
+} from "@/components/icons";
 import { useStore } from "@/components/store";
 import { Wordmark } from "@/components/wordmark";
+import { Artwork } from "@/components/artwork";
+import { shortMeta } from "@/lib/catalog";
+import { moreLikeThis } from "@/lib/taste";
 import type { Season, Title } from "@/lib/types";
 import { cn } from "@/lib/cn";
 
@@ -70,7 +81,7 @@ function buildSrc(o: {
 
     const params = new URLSearchParams();
     params.set("color", ACCENT);
-    params.set("suggestionui", "true");
+    params.set("suggestionui", "false");
     params.set("quality", quality);
     params.set("autoplay", "1");
     if (resumeAt && resumeAt > 20) params.set("t", String(Math.floor(resumeAt)));
@@ -111,6 +122,8 @@ export function Player({
   const [menu, setMenu] = useState<null | "settings" | "episodes">(null);
   const [chrome, setChrome] = useState(true);
   const [started, setStarted] = useState(false);
+  const [paused, setPaused] = useState(false);
+  const [showSuggestions, setShowSuggestions] = useState(true);
 
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const hideTimer = useRef<number | null>(null);
@@ -118,6 +131,9 @@ export function Player({
   const progressRef = useRef(progress);
   progressRef.current = progress;
   const loadedRef = useRef(false);
+  const lastTime = useRef(0);
+  const stillHits = useRef(0);
+  const pauseTimer = useRef<number | null>(null);
   const triedFallback = useRef(false);
 
   /* restore preferences */
@@ -145,6 +161,31 @@ export function Player({
     return buildSrc({ server, title, season, episode, quality, resumeAt });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [server, quality, title.tmdbId, title.kind, title.anilistId, season, episode]);
+
+  const suggestions = useMemo(() => moreLikeThis(title, progress, 6), [title, progress]);
+
+  /** a progress tick that doesn't advance the clock means the user paused */
+  const trackPlayState = useCallback((current: number) => {
+    const delta = current - lastTime.current;
+    lastTime.current = current;
+
+    if (delta > 0.4) {
+      stillHits.current = 0;
+      if (pauseTimer.current) window.clearTimeout(pauseTimer.current);
+      setPaused(false);
+      return;
+    }
+
+    if (current <= 1) return;
+    if (pauseTimer.current) window.clearTimeout(pauseTimer.current);
+    pauseTimer.current = window.setTimeout(() => {
+      stillHits.current += 1;
+      if (stillHits.current >= 1) {
+        setPaused(true);
+        setShowSuggestions(true);
+      }
+    }, 1000);
+  }, []);
 
   const currentSeason = seasons.find((s) => s.number === season);
   const hasNext =
@@ -190,6 +231,9 @@ export function Player({
 
   useEffect(() => {
     setStarted(false);
+    setPaused(false);
+    lastTime.current = 0;
+    stillHits.current = 0;
     loadedRef.current = false;
     const quick = window.setTimeout(() => setStarted(true), 1800);
     const silent = window.setTimeout(() => {
@@ -216,6 +260,7 @@ export function Player({
         const current = Number(data.currentTime) || 0;
         const total = Number(data.duration) || 0;
         setStarted(true);
+        trackPlayState(current);
         const now = Date.now();
         if (now - savedAt.current > 4000 && total) {
           savedAt.current = now;
@@ -245,6 +290,7 @@ export function Player({
       const total = Number(p.duration) || 0;
       const pct = Number(p.progress ?? (total ? (current / total) * 100 : 0)) || 0;
       setStarted(true);
+      trackPlayState(current);
 
       const now = Date.now();
       if (now - savedAt.current > 4000 || p.completed) {
@@ -261,7 +307,7 @@ export function Player({
     };
     window.addEventListener("message", onMessage);
     return () => window.removeEventListener("message", onMessage);
-  }, [router, setProgress, title.slug, season, episode]);
+  }, [router, setProgress, title.slug, season, episode, trackPlayState]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -459,6 +505,78 @@ export function Player({
                 the bottom.
               </p>
             </motion.div>
+          )}
+        </AnimatePresence>
+
+
+        {/* pause suggestions — Netflix-style rail, sits clear of the player's own bar */}
+        <AnimatePresence>
+          {paused && showSuggestions && suggestions.length > 0 && (
+            <motion.aside
+              initial={{ opacity: 0, y: 22 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 16 }}
+              transition={{ duration: 0.32, ease: [0.16, 1, 0.3, 1] }}
+              className="pointer-events-auto absolute bottom-[92px] right-3 z-20 w-[300px] max-w-[92vw] overflow-hidden rounded-lg border border-white/10 bg-[#0d0d0d]/94 shadow-[0_18px_60px_rgba(0,0,0,0.6)] backdrop-blur-xl md:bottom-[104px] md:right-6 md:w-[460px]"
+            >
+              <div className="flex items-start justify-between gap-3 border-b border-white/10 px-3.5 py-2.5">
+                <div>
+                  <p className="text-[9.5px] font-semibold uppercase tracking-[0.26em] text-[#e50914]">
+                    Paused
+                  </p>
+                  <h2 className="mt-0.5 text-[13.5px] font-semibold text-white md:text-[15px]">
+                    More Like This
+                  </h2>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowSuggestions(false)}
+                  aria-label="Hide suggestions"
+                  className="grid h-7 w-7 shrink-0 place-items-center rounded-full text-white/50 transition hover:bg-white/10 hover:text-white"
+                >
+                  <CloseIcon width={14} height={14} />
+                </button>
+              </div>
+
+              <div className="grid grid-cols-3 gap-1.5 p-2 md:gap-2 md:p-2.5">
+                {suggestions.map((item) => (
+                  <button
+                    key={item.slug}
+                    type="button"
+                    onClick={() => router.push(`/watch/${item.kind}/${item.slug}`)}
+                    className="group relative overflow-hidden rounded-[4px] bg-[#1b1b1b] text-left ring-1 ring-white/5 transition duration-200 hover:z-10 hover:ring-white/40"
+                  >
+                    <span className="relative block aspect-[2/3] w-full overflow-hidden">
+                      <Artwork
+                        slug={item.slug}
+                        name={item.name}
+                        accent={item.accent}
+                        sizes="(max-width: 768px) 30vw, 150px"
+                      />
+                      <span className="absolute inset-0 bg-gradient-to-t from-black/90 via-transparent to-transparent opacity-0 transition group-hover:opacity-100" />
+                      <span className="absolute inset-0 grid place-items-center opacity-0 transition group-hover:opacity-100">
+                        <span className="grid h-9 w-9 place-items-center rounded-full border-2 border-white bg-black/40 text-white">
+                          <PlayIcon width={13} height={13} />
+                        </span>
+                      </span>
+                      <span className="absolute left-1 top-1 rounded-sm bg-black/70 px-1 py-0.5 text-[8px] font-bold uppercase tracking-wider text-white/85">
+                        {item.kind === "series" ? "Series" : "Film"}
+                      </span>
+                    </span>
+                    <span className="block px-1.5 pb-1.5 pt-1">
+                      <span className="block truncate text-[10.5px] font-medium leading-tight text-white/90">
+                        {item.name}
+                      </span>
+                      <span className="mt-0.5 flex items-center gap-1 text-[9px] text-white/45">
+                        <span className="font-semibold text-[#46d369]">{item.match}% match</span>
+                        <span>·</span>
+                        <span className="truncate">{shortMeta(item)}</span>
+                      </span>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </motion.aside>
           )}
         </AnimatePresence>
 
