@@ -7,6 +7,7 @@ import { Navbar } from "@/components/navbar";
 import { PosterTile } from "@/components/row";
 import { PlayIcon } from "@/components/icons";
 import { HeroTrailer } from "@/components/trailer";
+import { EpisodeStill } from "@/components/episode-still";
 import {
   allTitles,
   formatRuntime,
@@ -132,10 +133,11 @@ export default async function TitlePage({ params }: { params: Promise<{ slug: st
                     >
                       <span className="w-4 text-center text-sm text-white/40">{ep.number}</span>
                       <span className="relative h-12 w-20 shrink-0 overflow-hidden rounded bg-[#222]">
-                        <Artwork
+                        <EpisodeStill
+                          tmdbId={title.tmdbId}
+                          season={seasons[0].number}
+                          episode={ep.number}
                           slug={title.slug}
-                          name=""
-                          kind="backdrop"
                           accent={title.accent}
                           sizes="140px"
                         />

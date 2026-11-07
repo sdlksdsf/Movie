@@ -110,10 +110,10 @@ export async function findTrailer(tmdbId: number, kind: "movie" | "series"): Pro
   return key;
 }
 
-export function trailerEmbedUrl(videoId: string, origin: string) {
+export function trailerEmbedUrl(videoId: string, origin: string, unmuted = false) {
   const params = new URLSearchParams({
     autoplay: "1",
-    mute: "1",
+    mute: unmuted ? "0" : "1",
     controls: "0",
     modestbranding: "1",
     rel: "0",

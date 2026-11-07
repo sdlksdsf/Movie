@@ -171,6 +171,12 @@ const episodeBeats = [
   "Two worlds collide in a way no one can walk back from.",
   "The past refuses to stay buried.",
   "Every choice narrows the exits, until only one remains.",
+  "The clock runs out long before anyone is ready.",
+  "An impossible decision is made in a single breath.",
+  "Trust is offered, and immediately spent.",
+  "Everything hinges on a call that never comes.",
+  "Old loyalties split clean down the middle.",
+  "Not everyone makes it home tonight.",
 ];
 
 const episodeTitles = [
@@ -186,6 +192,18 @@ const episodeTitles = [
   "Before the Fall",
   "What We Owe",
   "The Other Door",
+  "Smoke and Mirrors",
+  "Nine Lives",
+  "The Quiet Part",
+  "Paper Trails",
+  "Long Night",
+  "The Hand You're Dealt",
+  "Terminal Velocity",
+  "Broken Compass",
+  "Echo Chamber",
+  "The Last Exit",
+  "Splinter",
+  "Aftermath",
 ];
 
 function hash(str: string) {
@@ -203,13 +221,18 @@ export function seasonsFor(title: Title): Season[] {
   for (let s = 1; s <= count; s++) {
     const base = hash(`${title.slug}-${s}`);
     const episodeCount = 6 + (base % 4);
+    /* walk the pools sequentially from a per-season offset: every episode in a
+       season gets its own title and its own synopsis (a season is 6–9 episodes,
+       the pools are 24 and 16, so nothing repeats) */
+    const titleStart = base % episodeTitles.length;
+    const beatStart = hash(`${title.slug}-beats-${s}`) % episodeBeats.length;
     const episodes = Array.from({ length: episodeCount }, (_, i) => {
       const idx = hash(`${title.slug}-${s}-${i}`);
       return {
         number: i + 1,
-        name: episodeTitles[(idx + i) % episodeTitles.length],
+        name: episodeTitles[(titleStart + i) % episodeTitles.length],
         runtime: 42 + (idx % 18),
-        overview: episodeBeats[(idx + i * 3) % episodeBeats.length],
+        overview: episodeBeats[(beatStart + i) % episodeBeats.length],
       };
     });
     seasons.push({

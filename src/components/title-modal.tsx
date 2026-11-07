@@ -15,6 +15,7 @@ import {
 import { useStore } from "@/components/store";
 import { PosterTile } from "@/components/row";
 import { TrailerStage, useTrailerKey } from "@/components/trailer";
+import { EpisodeStill } from "@/components/episode-still";
 import {
   formatRuntime,
   getTitle,
@@ -258,11 +259,12 @@ function ModalBody({
                   >
                     <span className="w-5 shrink-0 text-center text-sm text-white/50">{ep.number}</span>
                     <span className="relative h-12 w-[84px] shrink-0 overflow-hidden rounded bg-[#222] md:h-14 md:w-[100px]">
-                      <span className="absolute inset-0 opacity-70">
-                        <Artwork
+                      <span className="absolute inset-0 opacity-90">
+                        <EpisodeStill
+                          tmdbId={title.tmdbId}
+                          season={season}
+                          episode={ep.number}
                           slug={title.slug}
-                          name=""
-                          kind="backdrop"
                           accent={title.accent}
                           sizes="160px"
                         />
