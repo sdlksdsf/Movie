@@ -213,3 +213,34 @@ body {
   transform: scaleY(1.08);
   transform-origin: center;
 }
+
+/* ------------------------------------------------------------------ *
+ * Mobile performance
+ * ------------------------------------------------------------------ */
+
+/* rows are part of a very long page: let the browser skip off-screen ones */
+.row-shell {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 260px;
+}
+
+/* kill the grey tap flash and the double-tap zoom delay on touch */
+button,
+a,
+[role="button"] {
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+/* smoother momentum scrolling inside shelves */
+.no-scrollbar {
+  -webkit-overflow-scrolling: touch;
+}
+
+/* phones: a little less blur to paint, same look */
+@media (max-width: 767px) {
+  .backdrop-blur-xl {
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+  }
+}

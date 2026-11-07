@@ -7,14 +7,11 @@
  * title has nothing usable — the poster artwork simply stays put.
  */
 
+import { TMDB_API_KEY } from "@/lib/tmdb-key";
+
 const ENDPOINT = "https://api.themoviedb.org/3";
 
-/** baked fallback so a trailer never depends on the visitor configuring a key */
-const BAKED_KEY = "18b99b7ed74f1f6407089a3471cd6e5a";
-
-function apiKey() {
-  return process.env.NEXT_PUBLIC_TMDB_KEY || BAKED_KEY;
-}
+const apiKey = () => TMDB_API_KEY;
 
 type Video = {
   id: string;

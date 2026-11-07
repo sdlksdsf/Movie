@@ -27,6 +27,8 @@ export type LiveItem = {
   anime?: boolean;
 };
 
+import { TMDB_API_KEY } from "@/lib/tmdb-key";
+
 const KEY_STORAGE = "nf.tmdb";
 
 export function getKey(): string {
@@ -46,7 +48,8 @@ export function setKey(key: string) {
   }
 }
 
-export const hasKey = () => Boolean(getKey() || process.env.NEXT_PUBLIC_TMDB_KEY);
+/** always true: the site ships with a working TMDB key baked in */
+export const hasKey = () => Boolean(getKey() || TMDB_API_KEY);
 
 async function json<T>(url: string, timeout = 8000): Promise<T | null> {
   const controller = new AbortController();
@@ -99,7 +102,7 @@ const isBearer = (key: string) => key.startsWith("eyJ");
 async function tmdbFetch<T>(
   path: string,
   params: Record<string, string> = {},
-  key = getKey() || (process.env.NEXT_PUBLIC_TMDB_KEY ?? ""),
+  key = getKey() || TMDB_API_KEY,
 ): Promise<T | null> {
   if (!key) return null;
   const url = new URL(`https://api.themoviedb.org/3${path}`);
@@ -138,7 +141,7 @@ export type Shelf = { id: string; title: string; hint?: string; items: LiveItem[
 
 /** TMDB shelves — the big one. */
 export async function tmdbShelves(): Promise<Shelf[]> {
-  const key = getKey() || process.env.NEXT_PUBLIC_TMDB_KEY || "";
+  const key = getKey() || TMDB_API_KEY;
   if (!key) return [];
 
   const [trending, movies, series, anime, topRated, animeFilms, anime2] = await Promise.all([
