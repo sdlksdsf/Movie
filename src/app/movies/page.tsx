@@ -1,15 +1,11 @@
 import type { Metadata } from "next";
-import { BrowseGrid } from "@/components/browse-grid";
-import { allTitles } from "@/lib/catalog";
+import { LiveCatalogue } from "@/components/live-catalogue";
 
-export const metadata: Metadata = { title: "Movies — NOFLIX" };
+export const metadata: Metadata = {
+  title: "Movies — NOFLIX",
+  description: "1,000 films ready to stream, popularity ordered and refreshed every few hours.",
+};
 
 export default function Page() {
-  return (
-    <BrowseGrid
-      titles={allTitles.filter((t) => t.kind === "movie")}
-      heading="Movies"
-      subheading="Big-screen favourites, award winners and the ones you keep meaning to re-watch."
-    />
-  );
+  return <LiveCatalogue fixedTab="movie" heading="1,000 movies" />;
 }

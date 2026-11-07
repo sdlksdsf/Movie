@@ -1,15 +1,11 @@
 import type { Metadata } from "next";
-import { BrowseGrid } from "@/components/browse-grid";
-import { allTitles } from "@/lib/catalog";
+import { LiveCatalogue } from "@/components/live-catalogue";
 
-export const metadata: Metadata = { title: "TV Shows — NOFLIX" };
+export const metadata: Metadata = {
+  title: "TV Shows — NOFLIX",
+  description: "1,000 series ready to binge, popularity ordered and refreshed every few hours.",
+};
 
 export default function Page() {
-  return (
-    <BrowseGrid
-      titles={allTitles.filter((t) => t.kind === "series")}
-      heading="TV Shows"
-      subheading="Binge-ready series — from three-season thrillers to sitcoms you have already watched five times."
-    />
-  );
+  return <LiveCatalogue fixedTab="series" heading="1,000 TV shows" />;
 }

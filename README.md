@@ -73,6 +73,24 @@ Profiles are stored per device and are fully customisable:
 - **Kids profile** — sets a softer green theme and hides horror, crime, war and adult-flagged
   titles everywhere. Kids rows are limited to animation, family and pre-school genres.
 
+## The catalogue: 1,000 films, 1,000 series, 1,000 anime
+
+The bundled JSON ships ~150 curated titles so the site paints instantly and works offline.
+Everything else is built on the server, once per tab, by `src/lib/catalogue.ts`:
+
+```
+/api/catalogue?tab=movie|series|anime&offset=0&limit=120[&genre=28][&kids=1]
+```
+
+- exactly **1,000** unique, artwork-complete titles per tab (anime = Japanese animation only,
+  series and films interleaved), popularity ordered;
+- built from TMDB discover, deduped, memoised for six hours and served with
+  `s-maxage=21600, stale-while-revalidate=86400`, so the next visitor gets it from the edge cache;
+- the credential stays on the server — the browser never sees a key for this route;
+- `/movies`, `/tv-shows` and `/anime` walk the shelf 120 tiles at a time on an
+  `IntersectionObserver`, so scrolling 1,000 posters stays smooth on a phone;
+- kids profiles ask for `kids=1` and the server returns only family/animation titles above 5.5★.
+
 ## Stream servers and failover
 
 Playback is delegated to third-party embeds. NOFLIX walks the list automatically when a server
