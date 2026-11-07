@@ -10,39 +10,40 @@ import {
   CloseIcon,
   NextIcon,
   PlayIcon,
-  SparkIcon,
+  SubtitlesIcon,
 } from "@/components/icons";
 import { useStore } from "@/components/store";
 import { Wordmark } from "@/components/wordmark";
 import { Artwork } from "@/components/artwork";
 import { shortMeta } from "@/lib/catalog";
 import { moreLikeThis } from "@/lib/taste";
+import {
+  DEFAULT_PLAYER,
+  DEFAULT_QUALITY,
+  PLAYERS,
+  QUALITIES,
+  buildSrc,
+  isPlayerId,
+  otherPlayer,
+  playerMeta,
+  resolvePlayer,
+  type PlayerId,
+  type Quality,
+} from "@/lib/players";
 import type { Season, Title } from "@/lib/types";
 import { cn } from "@/lib/cn";
 
 /**
- * One player, one set of controls.
+ * One player, one layer.
  *
- * The stream is a third-party iframe (CineLite) that owns playback: play/pause,
- * seek, volume, subtitles, audio track, cast and fullscreen all live in *its*
- * bottom bar. We deliberately do not re-implement those, because a cross-origin
- * iframe can't be controlled that way — that's what produced the "two players"
- * look before.
+ * Playback itself belongs to the third-party embed in the iframe — play/pause,
+ * seek, volume, subtitles, audio and fullscreen live in *its* bottom bar. We
+ * never draw a second control strip over it.
  *
- * Our layer only does the things the embed cannot:
- *   back navigation · which server · default quality (URL param) · episodes
+ * Our chrome only covers what the embed can't do:
+ *   source switching (frameXTV default, CineLite backup) · next episode /
+ *   auto-advance · seasons · back · resume position · pause suggestions.
  */
-
-type ServerId = "viper" | "archer";
-const SERVERS: Array<{ id: ServerId; label: string; hint: string }> = [
-  { id: "viper", label: "Viper", hint: "CineLite · 4K + subtitles" },
-  { id: "archer", label: "Archer", hint: "FrameXTV · backup" },
-];
-
-const QUALITIES = ["4k", "1080p", "720p", "480p"] as const;
-type Quality = (typeof QUALITIES)[number];
-
-const ACCENT = "e50914";
 
 const ls = {
   get(key: string) {
@@ -61,43 +62,49 @@ const ls = {
   },
 };
 
-function buildSrc(o: {
-  server: ServerId;
-  title: Title;
-  season: number;
-  episode: number;
-  quality: Quality;
-  resumeAt: number | null;
-}) {
-  const { server, title, season, episode, quality, resumeAt } = o;
+type Tick = {
+  current: number;
+  total: number;
+  completed: boolean;
+  season?: number | null;
+  episode?: number | null;
+};
 
-  if (server === "viper") {
-    // /{tmdbId} for films · /tv/{tmdbId}/{s}/{e} · /anime/{anilistId}/{ep}
-    const base = title.anilistId
-      ? `https://embed.cinelite.xyz/anime/${title.anilistId}/${episode}`
-      : title.kind === "series"
-        ? `https://embed.cinelite.xyz/tv/${title.tmdbId}/${season}/${episode}`
-        : `https://embed.cinelite.xyz/${title.tmdbId}`;
+/** Accept any provider's tick shape — both embeds post different envelopes. */
+function readTick(data: unknown): Tick | null {
+  if (!data || typeof data !== "object") return null;
+  const raw = data as Record<string, unknown>;
 
-    const params = new URLSearchParams();
-    params.set("color", ACCENT);
-    params.set("suggestionui", "false");
-    params.set("quality", quality);
-    params.set("autoplay", "1");
-    if (resumeAt && resumeAt > 20) params.set("t", String(Math.floor(resumeAt)));
-    return `${base}?${params.toString()}`;
+  const payload = (raw.payload as Record<string, unknown> | undefined) ?? raw;
+
+  const current = Number(payload.currentTime ?? payload.current ?? payload.time);
+  const total = Number(payload.duration);
+  if (!Number.isFinite(current)) return null;
+  if (!Number.isFinite(total) || total <= 0) {
+    if (!Number.isFinite(current) || current <= 0) return null;
   }
 
-  const base =
-    title.kind === "series"
-      ? `https://framextv.xyz/embed/${title.tmdbId}/${season}/${episode}`
-      : `https://framextv.xyz/embed/${title.tmdbId}`;
-  const params = new URLSearchParams();
-  params.set("autoplay", "1");
-  params.set("muted", "0");
-  params.set("controls", "1");
-  if (resumeAt && resumeAt > 20) params.set("t", String(Math.floor(resumeAt)));
-  return `${base}?${params.toString()}`;
+  const pct = Number(payload.progress);
+  const completed =
+    Boolean(payload.completed) ||
+    (Number.isFinite(pct) && pct >= 99.4) ||
+    (total > 0 && current / total >= 0.995);
+
+  return {
+    current,
+    total: Number.isFinite(total) ? total : 0,
+    completed,
+    season: (payload.season as number | null | undefined) ?? null,
+    episode: (payload.episode as number | null | undefined) ?? null,
+  };
+}
+
+function nextEpisodeOf(seasons: Season[], season: number, episode: number) {
+  const current = seasons.find((s) => s.number === season);
+  if (current && episode < current.episodes.length) return { season, episode: episode + 1 };
+  const after = seasons.find((s) => s.number === season + 1);
+  if (after && after.episodes.length > 0) return { season: season + 1, episode: 1 };
+  return null;
 }
 
 export function Player({
@@ -115,14 +122,20 @@ export function Player({
   const router = useRouter();
   const { setProgress, progress, toast } = useStore();
 
+  const [mounted, setMounted] = useState(false);
+  const [player, setPlayer] = useState<PlayerId>(() => resolvePlayer(DEFAULT_PLAYER, title));
+  const [quality, setQuality] = useState<Quality>(DEFAULT_QUALITY);
   const [season, setSeason] = useState(initialSeason);
   const [episode, setEpisode] = useState(initialEpisode);
-  const [server, setServer] = useState<ServerId>("viper");
-  const [quality, setQuality] = useState<Quality>("1080p");
-  const [menu, setMenu] = useState<null | "settings" | "episodes">(null);
+
+  const [menu, setMenu] = useState(false);
   const [chrome, setChrome] = useState(true);
-  const [started, setStarted] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+  const [playing, setPlaying] = useState(false);
   const [paused, setPaused] = useState(false);
+  const [nudge, setNudge] = useState(false);
+  const [upNext, setUpNext] = useState<{ left: number } | null>(null);
+  const [nonce, setNonce] = useState(0);
   const [showSuggestions, setShowSuggestions] = useState(true);
 
   const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -131,25 +144,34 @@ export function Player({
   const progressRef = useRef(progress);
   progressRef.current = progress;
   const loadedRef = useRef(false);
+  const playingRef = useRef(false);
   const lastTime = useRef(0);
   const stillHits = useRef(0);
   const pauseTimer = useRef<number | null>(null);
-  const triedFallback = useRef(false);
+  const nudgeTimer = useRef<number | null>(null);
+  const nudgeHide = useRef<number | null>(null);
+  const fallbackUsed = useRef(false);
+  const dismissed = useRef(false);
 
-  /* restore preferences */
+  const clearPauseTimer = () => {
+    if (pauseTimer.current) window.clearTimeout(pauseTimer.current);
+    pauseTimer.current = null;
+  };
+
+  /* restore the user's chosen source + quality (default: frameXTV) */
   useEffect(() => {
-    const q = ls.get("nf.quality") as Quality | null;
-    const best = ls.get("nf.server.best") as ServerId | null;
-    const s = ls.get("nf.server") as ServerId | null;
-    if (q && QUALITIES.includes(q)) setQuality(q);
-    if (best && SERVERS.some((x) => x.id === best)) setServer(best);
-    else if (s && SERVERS.some((x) => x.id === s)) setServer(s);
-  }, []);
+    setMounted(true);
+    const stored = ls.get("nf.player");
+    setPlayer(resolvePlayer(isPlayerId(stored) ? stored : DEFAULT_PLAYER, title));
+    const q = ls.get("nf.quality");
+    if (q && (QUALITIES as readonly string[]).includes(q)) setQuality(q as Quality);
+    // legacy keys are deliberately ignored so everyone lands on frameXTV
+  }, [title]);
 
   /**
-   * The embed URL is derived from nothing but [server, quality, season, episode].
-   * Playback telemetry is read through a ref, so it can never remount the frame
-   * (that was the endless "connecting" loop).
+   * The embed URL depends only on [source, quality, episode] — playback
+   * telemetry is read through refs, so a tick can never remount the frame
+   * (that was the old endless-reconnect bug).
    */
   const src = useMemo(() => {
     const stored = progressRef.current[title.slug];
@@ -158,44 +180,173 @@ export function Player({
       sameEpisode && stored.percent > 0.02 && stored.percent < 0.95 && stored.seconds
         ? stored.seconds
         : null;
-    return buildSrc({ server, title, season, episode, quality, resumeAt });
+    return buildSrc({ player, title, season, episode, quality, resumeAt });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [server, quality, title.tmdbId, title.kind, title.anilistId, season, episode]);
+  }, [player, quality, title.tmdbId, title.anilistId, title.kind, season, episode, nonce]);
 
   const suggestions = useMemo(() => moreLikeThis(title, progress, 6), [title, progress]);
+  const nextEp = useMemo(() => nextEpisodeOf(seasons, season, episode), [seasons, season, episode]);
+  const currentSeason = seasons.find((s) => s.number === season);
 
-  /** a progress tick that doesn't advance the clock means the user paused */
-  const trackPlayState = useCallback((current: number) => {
-    const delta = current - lastTime.current;
-    lastTime.current = current;
+  /* ---------------------------------------------------------------- source */
 
-    if (delta > 0.4) {
-      stillHits.current = 0;
-      if (pauseTimer.current) window.clearTimeout(pauseTimer.current);
-      setPaused(false);
+  const hardFallback = useCallback(() => {
+    if (fallbackUsed.current) return;
+    const next = resolvePlayer(otherPlayer(player), title);
+    if (next === player) return;
+    fallbackUsed.current = true;
+    setPlayer(next);
+    toast(`${playerMeta(player).label} didn't respond — switched to ${playerMeta(next).label}`);
+  }, [player, title, toast]);
+
+  /* per-source reset: cheap, so switching feels instant */
+  useEffect(() => {
+    setLoaded(false);
+    setPlaying(false);
+    setPaused(false);
+    setNudge(false);
+    setUpNext(null);
+    dismissed.current = false;
+    loadedRef.current = false;
+    playingRef.current = false;
+    lastTime.current = 0;
+    stillHits.current = 0;
+    clearPauseTimer();
+
+    const slow = window.setTimeout(() => {
+      if (!loadedRef.current) hardFallback();
+    }, 9000);
+    return () => window.clearTimeout(slow);
+  }, [src, hardFallback]);
+
+  /* if the frame loads but nothing ever starts, offer a one-tap start …
+     and if that source still refuses to play, hop to the backup by itself */
+  useEffect(() => {
+    if (!loaded) return;
+    if (nudgeTimer.current) window.clearTimeout(nudgeTimer.current);
+    if (nudgeHide.current) window.clearTimeout(nudgeHide.current);
+
+    nudgeTimer.current = window.setTimeout(() => {
+      if (playingRef.current) return;
+      setNudge(true);
+      nudgeHide.current = window.setTimeout(() => setNudge(false), 20000);
+    }, 3200);
+
+    const hop = window.setTimeout(() => {
+      if (!playingRef.current) hardFallback();
+    }, 10000);
+
+    return () => {
+      if (nudgeTimer.current) window.clearTimeout(nudgeTimer.current);
+      if (nudgeHide.current) window.clearTimeout(nudgeHide.current);
+      window.clearTimeout(hop);
+    };
+  }, [loaded, src, hardFallback]);
+
+  /* ------------------------------------------------------------- telemetry */
+
+  useEffect(() => {
+    const onMessage = (event: MessageEvent) => {
+      const data = event.data;
+      if (!data || typeof data !== "object") return;
+
+      if ((data as { type?: string }).type === "CINELITE_EXIT_PLAYER") {
+        router.back();
+        return;
+      }
+
+      const tick = readTick(data);
+      if (!tick) return;
+
+      const { current, total } = tick;
+
+      if (!loadedRef.current) {
+        loadedRef.current = true;
+        setLoaded(true);
+      }
+      if (!playingRef.current && current > 0.5) {
+        playingRef.current = true;
+        setPlaying(true);
+        setNudge(false);
+      }
+
+      /* pause = a tick whose clock didn't move (providers tick ~3.5s) */
+      const delta = current - lastTime.current;
+      lastTime.current = current;
+      if (delta > 0.4) {
+        stillHits.current = 0;
+        clearPauseTimer();
+        setPaused(false);
+      } else if (current > 5) {
+        clearPauseTimer();
+        pauseTimer.current = window.setTimeout(() => {
+          stillHits.current += 1;
+          setPaused(true);
+          setShowSuggestions(true);
+        }, 1200);
+      }
+
+      /* up-next: fires once, near the end of an episode */
+      const ratio = total > 0 ? current / total : 0;
+      if (tick.completed || ratio >= 0.93) {
+        if (!dismissed.current && nextEp) {
+          setUpNext((prev) => prev ?? { left: 12 });
+        }
+      }
+
+      const now = Date.now();
+      if (now - savedAt.current > 5000 || tick.completed) {
+        savedAt.current = now;
+        setProgress(title.slug, {
+          season: title.kind === "series" ? (tick.season ?? season) : 1,
+          episode: title.kind === "series" ? (tick.episode ?? episode) : 1,
+          percent: tick.completed ? 1 : Math.min(1, Math.max(0, ratio)),
+          seconds: current,
+          duration: total,
+          updated: now,
+        });
+      }
+    };
+
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, [router, setProgress, title.slug, title.kind, season, episode, nextEp]);
+
+  /* ----------------------------------------------------------- up next flow */
+
+  const goTo = useCallback(
+    (s: number, e: number) => {
+      setUpNext(null);
+      dismissed.current = false;
+      setSeason(s);
+      setEpisode(e);
+      setMenu(false);
+      if (typeof window !== "undefined") {
+        window.history.replaceState(null, "", `/watch/series/${title.slug}?s=${s}&e=${e}`);
+      }
+    },
+    [title.slug],
+  );
+
+  useEffect(() => {
+    if (!upNext) return;
+    if (upNext.left <= 0) {
+      if (nextEp) goTo(nextEp.season, nextEp.episode);
       return;
     }
+    const timer = window.setTimeout(
+      () => setUpNext((current) => (current ? { left: current.left - 1 } : current)),
+      1000,
+    );
+    return () => window.clearTimeout(timer);
+  }, [upNext, nextEp, goTo]);
 
-    if (current <= 1) return;
-    if (pauseTimer.current) window.clearTimeout(pauseTimer.current);
-    pauseTimer.current = window.setTimeout(() => {
-      stillHits.current += 1;
-      if (stillHits.current >= 1) {
-        setPaused(true);
-        setShowSuggestions(true);
-      }
-    }, 1000);
-  }, []);
+  /* ---------------------------------------------------------------- chrome */
 
-  const currentSeason = seasons.find((s) => s.number === season);
-  const hasNext =
-    title.kind === "series" && Boolean(currentSeason && episode < (currentSeason.episodes.length ?? 0));
-
-  /* chrome auto-hide */
   const poke = useCallback(() => {
     setChrome(true);
     if (hideTimer.current) window.clearTimeout(hideTimer.current);
-    hideTimer.current = window.setTimeout(() => setChrome(false), 3200);
+    hideTimer.current = window.setTimeout(() => setChrome(false), 3000);
   }, []);
 
   useEffect(() => {
@@ -219,224 +370,188 @@ export function Player({
     }
   }, [menu, poke]);
 
-  /* fall back only when the frame never loads — never interrupt a live stream */
-  const fallbackServer = useCallback(() => {
-    if (triedFallback.current) return;
-    triedFallback.current = true;
-    const other: ServerId = server === "viper" ? "archer" : "viper";
-    setServer(other);
-    ls.set("nf.server", other);
-    toast(`No signal — switched to ${other === "viper" ? "Viper" : "Archer"}`);
-  }, [server, toast]);
-
-  useEffect(() => {
-    setStarted(false);
-    setPaused(false);
-    lastTime.current = 0;
-    stillHits.current = 0;
-    loadedRef.current = false;
-    const quick = window.setTimeout(() => setStarted(true), 1800);
-    const silent = window.setTimeout(() => {
-      if (!loadedRef.current) fallbackServer();
-    }, 7000);
-    return () => {
-      window.clearTimeout(quick);
-      window.clearTimeout(silent);
-    };
-  }, [src, fallbackServer]);
-
-  /* progress + resume, from either provider */
-  useEffect(() => {
-    const onMessage = (event: MessageEvent) => {
-      const data = event.data;
-      if (!data || typeof data !== "object") return;
-
-      if (data.type === "CINELITE_EXIT_PLAYER") {
-        router.back();
-        return;
-      }
-
-      if (data.event === "frameXTV:timeupdate") {
-        const current = Number(data.currentTime) || 0;
-        const total = Number(data.duration) || 0;
-        setStarted(true);
-        trackPlayState(current);
-        const now = Date.now();
-        if (now - savedAt.current > 4000 && total) {
-          savedAt.current = now;
-          setProgress(title.slug, {
-            season,
-            episode,
-            percent: Math.min(1, current / total),
-            seconds: current,
-            duration: total,
-            updated: now,
-          });
-        }
-        return;
-      }
-
-      if (data.type !== "CINELITE_PLAYBACK_PROGRESS") return;
-
-      const p = (data.payload ?? {}) as {
-        currentTime?: number;
-        duration?: number;
-        progress?: number;
-        completed?: boolean;
-        season?: number | null;
-        episode?: number | null;
-      };
-      const current = Number(p.currentTime) || 0;
-      const total = Number(p.duration) || 0;
-      const pct = Number(p.progress ?? (total ? (current / total) * 100 : 0)) || 0;
-      setStarted(true);
-      trackPlayState(current);
-
-      const now = Date.now();
-      if (now - savedAt.current > 4000 || p.completed) {
-        savedAt.current = now;
-        setProgress(title.slug, {
-          season: p.season ?? season,
-          episode: p.episode ?? episode,
-          percent: p.completed ? 1 : Math.min(1, pct / 100),
-          seconds: current,
-          duration: total,
-          updated: now,
-        });
-      }
-    };
-    window.addEventListener("message", onMessage);
-    return () => window.removeEventListener("message", onMessage);
-  }, [router, setProgress, title.slug, season, episode, trackPlayState]);
-
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       const el = event.target as HTMLElement | null;
       if (el && ["INPUT", "TEXTAREA", "SELECT"].includes(el.tagName)) return;
       if (event.key === "Escape") {
-        if (menu) setMenu(null);
+        if (menu) setMenu(false);
         else router.back();
+        return;
       }
-      if (event.key.toLowerCase() === "n" && hasNext) setEpisode((e) => e + 1);
+      if (event.key.toLowerCase() === "n" && nextEp) goTo(nextEp.season, nextEp.episode);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [menu, router, hasNext]);
+  }, [menu, router, nextEp, goTo]);
 
-  const changeServer = (next: ServerId) => {
-    setServer(next);
-    triedFallback.current = false;
-    ls.set("nf.server", next);
-    ls.set("nf.server.best", next);
-    toast(`Server · ${SERVERS.find((s) => s.id === next)?.label}`);
-    setMenu(null);
+  /* --------------------------------------------------------------- actions */
+
+  const canPlayNow = (id: PlayerId) => resolvePlayer(id, title) === id;
+
+  const changePlayer = (next: PlayerId) => {
+    if (!canPlayNow(next)) {
+      toast(`${playerMeta(next).label} has no stream for this title`);
+      return;
+    }
+    fallbackUsed.current = false;
+    setPlayer(next);
+    ls.set("nf.player", next);
+    toast(`Playing from ${playerMeta(next).label}`);
+    setMenu(false);
   };
 
   const changeQuality = (next: Quality) => {
     setQuality(next);
     ls.set("nf.quality", next);
     toast(`Restarting in ${next.toUpperCase()}`);
-    setMenu(null);
+    setMenu(false);
   };
+
+  const restart = () => {
+    setNudge(false);
+    setNonce((n) => n + 1);
+  };
+
+  const showChrome = chrome || menu || Boolean(upNext);
+  const showRail = paused && playing && !upNext && showSuggestions && suggestions.length > 0;
+  const activePlayer = playerMeta(player);
 
   return (
     <div className="fixed inset-0 overflow-hidden bg-black text-white">
-      <iframe
-        ref={iframeRef}
-        src={src}
-        title={`${title.name} · NOFLIX`}
-        allow="autoplay; fullscreen; encrypted-media; picture-in-picture; presentation"
-        allowFullScreen
-        referrerPolicy="origin"
-        onLoad={() => {
-          loadedRef.current = true;
-          ls.set("nf.server.best", server);
-          window.setTimeout(() => setStarted(true), 400);
-        }}
-        className="absolute inset-0 h-full w-full border-0"
-      />
+      {/* warm the connection to whichever embed is next */}
+      <link rel="preconnect" href="https://framextv.cc" crossOrigin="" />
+      <link rel="dns-prefetch" href="https://framextv.cc" />
+      <link rel="preconnect" href="https://embed.cinelite.xyz" crossOrigin="" />
+      <link rel="dns-prefetch" href="https://embed.cinelite.xyz" />
 
-      {/* everything here is click-through; only the actual buttons take input */}
-      <div className="pointer-events-none absolute inset-0">
-        {/* loading hint — small, top centre, gone in <2s */}
-        <AnimatePresence>
-          {!started && (
+      {/* poster behind the frame: never a black flash while it boots */}
+      <div className="absolute inset-0">
+        <Artwork
+          slug={title.slug}
+          name={title.name}
+          kind="backdrop"
+          accent={title.accent}
+          priority
+          sizes="100vw"
+        />
+        <div className="absolute inset-0 bg-black/80" />
+      </div>
+
+      {mounted && (
+        <iframe
+          ref={iframeRef}
+          key={src}
+          src={src}
+          title={`${title.name} · NOFLIX`}
+          allow="autoplay; fullscreen; encrypted-media; picture-in-picture; presentation"
+          allowFullScreen
+          referrerPolicy="origin"
+          loading="eager"
+          onLoad={() => {
+            loadedRef.current = true;
+            setLoaded(true);
+          }}
+          onError={() => hardFallback()}
+          className="absolute inset-0 z-10 h-full w-full border-0"
+        />
+      )}
+
+      {/* thin load bar, top edge — instant, non-blocking feedback */}
+      <AnimatePresence>
+        {!loaded && mounted && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="pointer-events-none absolute inset-x-0 top-0 z-40 h-[2px] overflow-hidden bg-white/10"
+          >
             <motion.div
-              initial={{ opacity: 0, y: -6 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -6 }}
-              transition={{ duration: 0.22 }}
-              className="absolute left-1/2 top-4 z-30 -translate-x-1/2"
-            >
-              <div className="flex items-center gap-2 rounded-full border border-white/10 bg-black/65 px-3 py-1.5 backdrop-blur-md">
-                <span className="h-2.5 w-2.5 animate-spin rounded-full border-[1.5px] border-white/25 border-t-[#e50914]" />
-                <span className="text-[11px] font-medium text-white/80">Starting stream…</span>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+              initial={{ x: "-40%" }}
+              animate={{ x: "140%" }}
+              transition={{ repeat: Infinity, duration: 1.05, ease: "linear" }}
+              className="h-full w-1/3 bg-[#e50914]"
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-        {/* top-left: back + title, auto-hiding, small */}
+      {/* everything below is click-through; only real buttons take input */}
+      <div className="pointer-events-none absolute inset-0 z-30">
+        {/* top-left: back + what's playing */}
         <AnimatePresence>
-          {chrome && (
+          {showChrome && (
             <motion.div
               initial={{ opacity: 0, x: -8 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -8 }}
-              transition={{ duration: 0.18 }}
-              className="absolute left-3 top-3 z-20 flex items-center gap-2 md:left-5 md:top-4"
+              transition={{ duration: 0.16 }}
+              className="absolute left-3 top-3 flex items-center gap-2 md:left-5 md:top-4"
             >
               <button
                 type="button"
                 onClick={() => router.back()}
                 aria-label="Back"
-                className="pointer-events-auto grid h-10 w-10 place-items-center rounded-full bg-black/55 text-white/90 backdrop-blur-md transition hover:bg-black/75 hover:text-white"
+                className="pointer-events-auto grid h-10 w-10 place-items-center rounded-full bg-black/60 text-white/90 backdrop-blur-md transition hover:bg-black/80 hover:text-white"
               >
                 <ArrowLeftIcon width={20} height={20} />
               </button>
 
-              <div className="pointer-events-none max-w-[46vw] rounded-full bg-black/55 px-3 py-1.5 backdrop-blur-md">
-                <p className="truncate text-[12.5px] font-semibold leading-tight text-white">{title.name}</p>
+              <div className="max-w-[42vw] rounded-full bg-black/60 px-3 py-1.5 backdrop-blur-md">
+                <p className="truncate text-[12.5px] font-semibold leading-tight text-white">
+                  {title.name}
+                </p>
                 <p className="truncate text-[10.5px] leading-tight text-white/55">
-                  {title.kind === "series" ? `S${season} · E${episode}` : `${title.year} · ${title.maturity}`}
+                  {title.kind === "series"
+                    ? `S${season} · E${episode}${nextEp ? " · Up next ready" : ""}`
+                    : `${title.year} · ${title.maturity}`}
                 </p>
               </div>
             </motion.div>
           )}
         </AnimatePresence>
 
-        {/* top-right: one menu button for the things the embed can't do */}
+        {/* top-right: next episode + source picker */}
         <AnimatePresence>
-          {chrome && (
+          {showChrome && (
             <motion.div
               initial={{ opacity: 0, x: 8 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: 8 }}
-              transition={{ duration: 0.18 }}
-              className="absolute right-3 top-3 z-20 flex items-center gap-2 md:right-5 md:top-4"
+              transition={{ duration: 0.16 }}
+              className="absolute right-3 top-3 z-30 flex items-center gap-2 md:right-5 md:top-4"
             >
-              {hasNext && (
+              {nextEp && (
                 <button
                   type="button"
-                  onClick={() => setEpisode((e) => e + 1)}
+                  onClick={() => goTo(nextEp.season, nextEp.episode)}
+                  className="pointer-events-auto flex h-10 items-center gap-1.5 rounded-full bg-black/60 px-3 text-[12px] font-semibold text-white/90 backdrop-blur-md transition hover:bg-black/80 hover:text-white"
                   aria-label="Next episode"
-                  className="pointer-events-auto grid h-10 w-10 place-items-center rounded-full bg-black/55 text-white/90 backdrop-blur-md transition hover:bg-black/75 hover:text-white"
                 >
-                  <NextIcon width={18} height={18} />
+                  <NextIcon width={16} height={16} />
+                  <span className="hidden sm:inline">Next</span>
                 </button>
               )}
+
               <button
                 type="button"
-                onClick={() => setMenu(menu === "settings" ? null : "settings")}
+                onClick={() => setMenu((open) => !open)}
                 aria-label="Player options"
                 className={cn(
-                  "pointer-events-auto grid h-10 w-10 place-items-center rounded-full backdrop-blur-md transition",
+                  "pointer-events-auto flex h-10 items-center gap-1.5 rounded-full px-3 text-[12px] font-semibold backdrop-blur-md transition",
                   menu
                     ? "bg-white text-black"
-                    : "bg-black/55 text-white/90 hover:bg-black/75 hover:text-white",
+                    : "bg-black/60 text-white/85 hover:bg-black/80 hover:text-white",
                 )}
               >
-                <SparkIcon width={18} height={18} />
+                <span
+                  className={cn(
+                    "h-1.5 w-1.5 rounded-full",
+                    loaded ? "bg-[#46d369]" : "bg-amber-400",
+                  )}
+                />
+                {activePlayer.label}
+                <ChevronDownIcon width={13} height={13} />
               </button>
             </motion.div>
           )}
@@ -444,79 +559,214 @@ export function Player({
 
         {/* options panel */}
         <AnimatePresence>
-          {menu === "settings" && (
+          {menu && (
             <motion.div
               initial={{ opacity: 0, y: -6, scale: 0.98 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: -6, scale: 0.98 }}
-              transition={{ duration: 0.16 }}
-              className="pointer-events-auto absolute right-3 top-16 z-30 w-[268px] overflow-hidden rounded-xl border border-white/10 bg-[#141414]/97 p-1.5 shadow-2xl backdrop-blur-xl md:right-5"
+              transition={{ duration: 0.14 }}
+              className="pointer-events-auto absolute right-3 top-16 z-40 max-h-[76vh] w-[286px] overflow-y-auto overscroll-contain rounded-xl border border-white/10 bg-[#141414]/[0.98] p-1.5 shadow-2xl backdrop-blur-xl md:right-5"
             >
               <p className="px-2.5 pb-1 pt-1.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-white/40">
-                Server
+                Player
               </p>
-              {SERVERS.map((item) => (
-                <Row
-                  key={item.id}
-                  active={server === item.id}
-                  title={item.label}
-                  subtitle={item.hint}
-                  onClick={() => changeServer(item.id)}
-                />
-              ))}
+              {PLAYERS.map((item) => {
+                const available = canPlayNow(item.id);
+                return (
+                  <Row
+                    key={item.id}
+                    active={player === item.id}
+                    title={
+                      <span className="flex items-center gap-1.5">
+                        {item.label}
+                        {item.badge && (
+                          <span className="rounded-sm bg-[#e50914] px-1 py-[1px] text-[8px] font-bold uppercase tracking-wide text-white">
+                            {item.badge}
+                          </span>
+                        )}
+                      </span>
+                    }
+                    subtitle={available ? item.hint : "No stream for this title"}
+                    disabled={!available}
+                    onClick={() => changePlayer(item.id)}
+                  />
+                );
+              })}
 
-              <p className="mt-1 px-2.5 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-white/40">
-                Default quality
-              </p>
-              {QUALITIES.map((item) => (
-                <Row
-                  key={item}
-                  active={quality === item}
-                  title={item.toUpperCase()}
-                  subtitle={item === quality ? "Reloads the stream in this quality" : undefined}
-                  onClick={() => changeQuality(item)}
-                />
-              ))}
-
-              {title.kind === "series" && currentSeason && (
+              {player === "cinelite" ? (
                 <>
                   <p className="mt-1 px-2.5 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-white/40">
-                    Season {season}
+                    Default quality
                   </p>
-                  <div className="max-h-[180px] overflow-y-auto">
-                    {currentSeason.episodes.map((item) => (
-                      <Row
-                        key={item.number}
-                        active={episode === item.number}
-                        title={`E${item.number} · ${item.name}`}
-                        subtitle={`${item.runtime} min`}
-                        onClick={() => {
-                          setEpisode(item.number);
-                          setMenu(null);
-                        }}
-                      />
-                    ))}
-                  </div>
+                  {QUALITIES.map((item) => (
+                    <Row
+                      key={item}
+                      active={quality === item}
+                      title={item.toUpperCase()}
+                      onClick={() => changeQuality(item)}
+                    />
+                  ))}
+                </>
+              ) : (
+                <p className="mt-1 flex items-start gap-1.5 px-2.5 pb-2 pt-2 text-[10.5px] leading-relaxed text-white/35">
+                  <SubtitlesIcon width={13} height={13} className="mt-[1px] shrink-0" />
+                  Quality, subtitles and audio live in {activePlayer.label}&apos;s own bar.
+                </p>
+              )}
+
+              {title.kind === "series" && (
+                <>
+                  <p className="mt-1 border-t border-white/10 px-2.5 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-white/40">
+                    Up next
+                  </p>
+                  {nextEp ? (
+                    <Row
+                      active={false}
+                      title={`S${nextEp.season}:E${nextEp.episode} · ${
+                        (seasons.find((s) => s.number === nextEp.season)?.episodes.find(
+                          (e) => e.number === nextEp.episode,
+                        )?.name) ?? "Next episode"
+                      }`}
+                      subtitle="Play next"
+                      onClick={() => goTo(nextEp.season, nextEp.episode)}
+                    />
+                  ) : (
+                    <p className="px-2.5 pb-2 text-[11px] text-white/35">You&apos;re on the last episode.</p>
+                  )}
+
+                  {currentSeason && (
+                    <>
+                      <p className="mt-1 px-2.5 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-white/40">
+                        Season {season}
+                      </p>
+                      <div className="max-h-[190px] overflow-y-auto">
+                        {currentSeason.episodes.map((item) => (
+                          <Row
+                            key={item.number}
+                            active={episode === item.number}
+                            title={`E${item.number} · ${item.name}`}
+                            subtitle={`${item.runtime} min`}
+                            onClick={() => goTo(season, item.number)}
+                          />
+                        ))}
+                      </div>
+                    </>
+                  )}
                 </>
               )}
 
-              <p className="mt-1 border-t border-white/10 px-2.5 pb-2 pt-2 text-[10.5px] leading-relaxed text-white/35">
-                Subtitles, audio track, quality switching and fullscreen are in the player&apos;s own bar at
-                the bottom.
-              </p>
+              <div className="mt-1 flex items-center justify-between gap-2 border-t border-white/10 px-2.5 pb-2 pt-2">
+                <span className="text-[10.5px] text-white/35">N · next episode</span>
+                <button
+                  type="button"
+                  onClick={restart}
+                  className="text-[10.5px] font-semibold text-white/55 transition hover:text-white"
+                >
+                  Restart stream
+                </button>
+              </div>
             </motion.div>
           )}
         </AnimatePresence>
 
-
-        {/* pause suggestions — Netflix-style rail, sits clear of the player's own bar */}
+        {/* "nothing is playing" — one tap restarts the frame from a real click */}
         <AnimatePresence>
-          {paused && showSuggestions && suggestions.length > 0 && (
+          {nudge && !paused && !upNext && (
+            <motion.button
+              type="button"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 10 }}
+              transition={{ duration: 0.2 }}
+              onClick={restart}
+              className="pointer-events-auto absolute bottom-4 left-3 flex items-center gap-2 rounded-full bg-[#e50914] px-3.5 py-2 text-[12px] font-semibold text-white shadow-lg shadow-black/50 transition hover:bg-[#f6121d] md:bottom-6 md:left-6"
+            >
+              <PlayIcon width={13} height={13} />
+              Stream paused? Tap to start
+            </motion.button>
+          )}
+        </AnimatePresence>
+
+        {/* up next card — Netflix-style, answers the "no next episode" gap */}
+        <AnimatePresence>
+          {upNext && nextEp && (
+            <motion.div
+              initial={{ opacity: 0, y: 24 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 18 }}
+              transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+              className="pointer-events-auto absolute bottom-[92px] right-3 z-30 w-[320px] max-w-[92vw] overflow-hidden rounded-lg border border-white/10 bg-[#0d0d0d]/95 shadow-[0_18px_60px_rgba(0,0,0,0.65)] backdrop-blur-xl md:bottom-[104px] md:right-6"
+            >
+              <div className="flex items-center justify-between border-b border-white/10 px-3 py-2">
+                <p className="text-[9.5px] font-semibold uppercase tracking-[0.26em] text-[#e50914]">
+                  Up next
+                </p>
+                <span className="text-[10px] text-white/45">
+                  in {Math.max(upNext.left, 0)}s
+                </span>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => goTo(nextEp.season, nextEp.episode)}
+                className="group flex w-full items-center gap-2.5 p-2.5 text-left transition hover:bg-white/5"
+              >
+                <span className="relative block h-[54px] w-[96px] shrink-0 overflow-hidden rounded-[4px] bg-[#1b1b1b]">
+                  <Artwork
+                    slug={title.slug}
+                    name={title.name}
+                    kind="backdrop"
+                    accent={title.accent}
+                    sizes="96px"
+                  />
+                  <span className="absolute inset-0 grid place-items-center bg-black/35 opacity-0 transition group-hover:opacity-100">
+                    <PlayIcon width={14} height={14} />
+                  </span>
+                </span>
+                <span className="min-w-0">
+                  <span className="block truncate text-[12px] font-semibold text-white">
+                    S{nextEp.season}:E{nextEp.episode} ·{" "}
+                    {(seasons
+                      .find((s) => s.number === nextEp.season)
+                      ?.episodes.find((e) => e.number === nextEp.episode)?.name) ?? "Next episode"}
+                  </span>
+                  <span className="mt-0.5 block truncate text-[10.5px] text-white/45">
+                    {title.name} · {activePlayer.label}
+                  </span>
+                </span>
+              </button>
+
+              <div className="flex items-center gap-2 px-2.5 pb-2.5">
+                <button
+                  type="button"
+                  onClick={() => goTo(nextEp.season, nextEp.episode)}
+                  className="flex-1 rounded-[4px] bg-white py-1.5 text-[11.5px] font-semibold text-black transition hover:bg-white/85"
+                >
+                  Play next
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    dismissed.current = true;
+                    setUpNext(null);
+                  }}
+                  className="rounded-[4px] border border-white/20 px-3 py-1.5 text-[11.5px] font-medium text-white/75 transition hover:border-white/40 hover:text-white"
+                >
+                  Cancel
+                </button>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* pause suggestions */}
+        <AnimatePresence>
+          {showRail && (
             <motion.aside
               initial={{ opacity: 0, y: 22 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: 16 }}
-              transition={{ duration: 0.32, ease: [0.16, 1, 0.3, 1] }}
+              transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
               className="pointer-events-auto absolute bottom-[92px] right-3 z-20 w-[300px] max-w-[92vw] overflow-hidden rounded-lg border border-white/10 bg-[#0d0d0d]/94 shadow-[0_18px_60px_rgba(0,0,0,0.6)] backdrop-blur-xl md:bottom-[104px] md:right-6 md:w-[460px]"
             >
               <div className="flex items-start justify-between gap-3 border-b border-white/10 px-3.5 py-2.5">
@@ -580,16 +830,16 @@ export function Player({
           )}
         </AnimatePresence>
 
-        {/* first-load wordmark, bottom-left, only before the stream starts */}
+        {/* wordmark while the stream boots */}
         <AnimatePresence>
-          {!started && (
+          {!playing && (
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="absolute bottom-5 left-5 z-20 hidden md:block"
+              className="absolute bottom-5 left-5 hidden md:block"
             >
-              <Wordmark className="text-lg opacity-40" asLink={false} />
+              <Wordmark className="text-lg opacity-35" asLink={false} />
             </motion.div>
           )}
         </AnimatePresence>
@@ -602,20 +852,24 @@ function Row({
   title,
   subtitle,
   active,
+  disabled,
   onClick,
 }: {
   title: React.ReactNode;
   subtitle?: string;
   active?: boolean;
+  disabled?: boolean;
   onClick: () => void;
 }) {
   return (
     <button
       type="button"
+      disabled={disabled}
       onClick={onClick}
       className={cn(
         "flex w-full items-center gap-2 rounded-md px-2.5 py-2 text-left transition",
         active ? "bg-white/10" : "hover:bg-white/5",
+        disabled && "cursor-not-allowed opacity-40 hover:bg-transparent",
       )}
     >
       <span className="grid w-4 shrink-0 place-items-center text-[#e50914]">
