@@ -68,7 +68,7 @@ const GENRES: Record<Tab, Array<{ id: number; name: string }>> = {
   ],
 };
 
-const PAGE = 120;
+const PAGE = 96;
 
 /**
  * The 1,000-title catalogue.
@@ -156,11 +156,13 @@ export function LiveCatalogue({
     if (!node || done) return;
     const observer = new IntersectionObserver(
       (entries) => {
-        if (entries[0]?.isIntersecting && !busy.current) {
+        /* only walk further once the reader has actually started scrolling —
+           otherwise the first paint can chain-load the whole shelf */
+        if (entries[0]?.isIntersecting && !busy.current && window.scrollY > 240) {
           void load(tab, genreId, items.length);
         }
       },
-      { rootMargin: "800px 0px" },
+      { rootMargin: "420px 0px" },
     );
     observer.observe(node);
     return () => observer.disconnect();
@@ -256,6 +258,7 @@ export function LiveCatalogue({
                     }${item.anime ? "&anime=1" : ""}&year=${item.year ?? ""}`,
                   )
                 }
+                style={{ contentVisibility: "auto", containIntrinsicSize: "260px 390px" }}
                 className="group relative overflow-hidden rounded-[6px] bg-[#1b1b1b] text-left ring-1 ring-white/5 transition duration-200 hover:z-10 hover:ring-white/40 focus-brand"
               >
                 <span className="relative block aspect-[2/3] w-full overflow-hidden">
