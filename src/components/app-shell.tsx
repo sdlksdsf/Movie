@@ -7,6 +7,7 @@ import { Intro } from "@/components/intro";
 import { ProfileGate } from "@/components/profile-gate";
 import { TitleModal } from "@/components/title-modal";
 import { SearchOverlay } from "@/components/search-overlay";
+import { SoundNotice } from "@/components/sound-notice";
 import { useStore } from "@/components/store";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
@@ -38,6 +39,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         {splash && !onPlayer && <Intro onDone={() => setSplash(false)} />}
       </AnimatePresence>
 
+      <SoundNotice />
       <TitleModal />
       <SearchOverlay />
 

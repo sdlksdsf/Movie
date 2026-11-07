@@ -3,6 +3,7 @@
 import { motion } from "framer-motion";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { MuteIcon, VolumeIcon } from "@/components/icons";
+import { openInOwnTab, soundIsBlocked } from "@/lib/media";
 import { findTrailer, trailerEmbedUrl } from "@/lib/trailer";
 import { cn } from "@/lib/cn";
 
@@ -28,18 +29,15 @@ export function useTrailerKey(tmdbId?: number, kind: "movie" | "series" = "movie
 }
 
 /* ------------------------------------------------------------------ *
- * YouTube IFrame API — the only way to mute/unmute a trailer without
- * reloading it. Loaded once per page, with a plain-iframe fallback.
+ * YouTube IFrame API — needed to mute/unmute without reloading.
  * ------------------------------------------------------------------ */
 
 type YTPlayer = {
   playVideo: () => void;
-  pauseVideo: () => void;
   mute: () => void;
   unMute: () => void;
-  isMuted: () => boolean;
   setVolume: (volume: number) => void;
-  seekTo: (seconds: number, allowSeekAhead: boolean) => void;
+  getCurrentTime: () => number;
   getPlayerState: () => number;
   destroy: () => void;
 };
@@ -59,13 +57,11 @@ function loadYouTubeApi(): Promise<YTNamespace> {
 
   apiPromise = new Promise<YTNamespace>((resolve, reject) => {
     const timeout = window.setTimeout(() => reject(new Error("yt-api-timeout")), 7000);
-
     scope.onYouTubeIframeAPIReady = () => {
       window.clearTimeout(timeout);
       if (scope.YT?.Player) resolve(scope.YT);
       else reject(new Error("yt-api-missing"));
     };
-
     const tag = document.createElement("script");
     tag.src = "https://www.youtube.com/iframe_api";
     tag.async = true;
@@ -80,47 +76,133 @@ function loadYouTubeApi(): Promise<YTNamespace> {
 }
 
 const PLAYING = 1;
-const PAUSED = 2;
-const ENDED = 0;
-const CUED = 5;
+
+type SoundState = {
+  wantSound: boolean;
+  attempt: number;
+  needsTab: boolean;
+  toggle: () => void;
+  onAudioBlocked: () => void;
+  onSoundOk: () => void;
+};
 
 /**
- * Muted-or-not, chromeless, looping trailer that covers its container.
+ * The escalation ladder for trailer audio:
+ *   1. ask the running player to unmute,
+ *   2. if the browser refuses, mute it back so the picture keeps moving, then
+ *   3. rebuild the player *inside* the user's next click (the only route some
+ *      browsers accept),
+ *   4. and if the surrounding frame simply forbids audio, say so and offer a tab.
+ */
+function useTrailerSound(): SoundState {
+  const [blockedUpFront] = useState(() => soundIsBlocked());
+  const [wantSound, setWantSound] = useState(false);
+  const [attempt, setAttempt] = useState(0);
+  const [failed, setFailed] = useState(false);
+  const [needsTab, setNeedsTab] = useState(() => blockedUpFront);
+  const attemptRef = useRef(0);
+  attemptRef.current = attempt;
+
+  const toggle = useCallback(() => {
+    if (wantSound) {
+      setWantSound(false);
+      return;
+    }
+    if (failed) {
+      setFailed(false);
+      setAttempt((a) => a + 1);
+    }
+    setWantSound(true);
+  }, [wantSound, failed]);
+
+  const onAudioBlocked = useCallback(() => {
+    setWantSound(false);
+    setFailed(true);
+    /* two refusals in a row means this frame will never allow audio */
+    if (attemptRef.current >= 2) setNeedsTab(true);
+  }, []);
+
+  const onSoundOk = useCallback(() => setNeedsTab(false), []);
+
+  return { wantSound, attempt, needsTab, toggle, onAudioBlocked, onSoundOk };
+}
+
+/**
+ * The trailer itself.
  *
- * Playback protection matters more than anything here: if the browser blocks
- * sound, or the player pauses itself, we mute and restart it rather than
- * leaving the viewer staring at a frozen frame.
+ * Rule one: it must never sit frozen. If sound is refused we mute, resume and
+ * report it upward rather than leaving a dead poster on screen.
  */
 export function TrailerFrame({
   videoId,
-  muted,
-  onSoundBlocked,
+  wantSound,
+  attempt,
+  onAudioBlocked,
+  onSoundOk,
   className,
 }: {
   videoId: string;
-  muted: boolean;
-  onSoundBlocked?: () => void;
+  wantSound: boolean;
+  attempt: number;
+  onAudioBlocked?: () => void;
+  onSoundOk?: () => void;
   className?: string;
 }) {
   const host = useRef<HTMLDivElement>(null);
   const player = useRef<YTPlayer | null>(null);
-  const mutedRef = useRef(muted);
-  mutedRef.current = muted;
-  const blockedRef = useRef(onSoundBlocked);
-  blockedRef.current = onSoundBlocked;
+  const wantSoundRef = useRef(wantSound);
+  wantSoundRef.current = wantSound;
+  const blockedHandler = useRef(onAudioBlocked);
+  blockedHandler.current = onAudioBlocked;
+  const okHandler = useRef(onSoundOk);
+  okHandler.current = onSoundOk;
+  const resumeAt = useRef(0);
   const [fallback, setFallback] = useState(false);
   const [origin, setOrigin] = useState("");
 
   useEffect(() => setOrigin(window.location.origin), []);
+
+  /** ask for audio; if the browser says no, re-mute and keep the picture moving */
+  const requestSound = useCallback((instance: YTPlayer) => {
+    try {
+      instance.unMute();
+      instance.setVolume(90);
+      instance.playVideo();
+    } catch {
+      /* ignore */
+    }
+
+    window.setTimeout(() => {
+      if (!wantSoundRef.current) return; // user changed their mind — stay quiet
+      let state = -1;
+      try {
+        state = instance.getPlayerState();
+      } catch {
+        return;
+      }
+      if (state === PLAYING) {
+        okHandler.current?.();
+        return;
+      }
+      try {
+        instance.mute();
+        instance.playVideo();
+      } catch {
+        /* ignore */
+      }
+      blockedHandler.current?.();
+    }, 1500);
+  }, []);
 
   const ensurePlaying = useCallback(() => {
     const instance = player.current;
     if (!instance) return;
     try {
       const state = instance.getPlayerState();
-      if (state === PAUSED || state === CUED || state === ENDED) instance.playVideo();
+      if (state !== PLAYING) instance.playVideo();
+      else resumeAt.current = instance.getCurrentTime();
     } catch {
-      /* player not ready yet */
+      /* not ready */
     }
   }, []);
 
@@ -134,13 +216,17 @@ export function TrailerFrame({
         const mount = document.createElement("div");
         host.current.replaceChildren(mount);
 
+        /* attempt > 0 = the user asked for sound again; build the player with
+           audio on, inside their click */
+        const startWithSound = attempt > 0 && wantSoundRef.current;
+
         const instance = new YT.Player(mount, {
           videoId,
           width: "100%",
           height: "100%",
           playerVars: {
             autoplay: 1,
-            mute: 1, // guaranteed start; sound is switched on right below
+            mute: startWithSound ? 0 : 1,
             controls: 0,
             modestbranding: 1,
             rel: 0,
@@ -150,37 +236,18 @@ export function TrailerFrame({
             playlist: videoId,
             disablekb: 1,
             fs: 0,
+            start: Math.max(0, Math.floor(resumeAt.current)),
             origin: window.location.origin,
           },
           events: {
             onReady: () => {
               player.current = instance;
-              instance.playVideo();
-
-              if (!mutedRef.current) {
-                /* try for sound straight away — the card was opened by a click,
-                   so the page has the activation a browser needs */
-                instance.unMute();
-                instance.setVolume(85);
+              try {
                 instance.playVideo();
-
-                window.setTimeout(() => {
-                  if (disposed || mutedRef.current) return;
-                  let state = -1;
-                  try {
-                    state = instance.getPlayerState();
-                  } catch {
-                    /* ignore */
-                  }
-                  if (state !== PLAYING) {
-                    /* the browser refused: go muted but never frozen */
-                    instance.mute();
-                    instance.playVideo();
-                    mutedRef.current = true;
-                    blockedRef.current?.();
-                  }
-                }, 1500);
+              } catch {
+                /* ignore */
               }
+              if (wantSoundRef.current) requestSound(instance);
             },
           },
         });
@@ -191,7 +258,7 @@ export function TrailerFrame({
         if (!disposed) setFallback(true);
       });
 
-    /* watchdog: a trailer must never sit paused */
+    /* a trailer must never sit paused */
     const guard = window.setInterval(ensurePlaying, 1500);
 
     return () => {
@@ -205,31 +272,32 @@ export function TrailerFrame({
         /* already gone */
       }
     };
-  }, [videoId, ensurePlaying]);
+  }, [videoId, attempt, requestSound, ensurePlaying]);
 
-  /* sound toggle — takes effect immediately, no reload, and resumes playback */
+  /* mute / unmute from the UI, without reloading the video */
   useEffect(() => {
     const instance = player.current;
     if (!instance) return;
-    try {
-      if (muted) {
+    if (wantSound) {
+      requestSound(instance);
+    } else {
+      try {
         instance.mute();
-      } else {
-        instance.unMute();
-        instance.setVolume(85);
+        instance.playVideo();
+      } catch {
+        /* ignore */
       }
-      instance.playVideo();
-    } catch {
-      /* ignore */
     }
-  }, [muted, videoId]);
+  }, [wantSound, videoId, requestSound]);
+
+  const key = `${wantSound ? "s" : "m"}${attempt}`;
 
   return (
     <div className={cn("pointer-events-none absolute inset-0 overflow-hidden bg-black", className)}>
       {fallback ? (
         <iframe
-          key={muted ? "muted" : "sound"}
-          src={trailerEmbedUrl(videoId, origin, !muted)}
+          key={key}
+          src={trailerEmbedUrl(videoId, origin, wantSound)}
           title="Trailer"
           aria-hidden
           tabIndex={-1}
@@ -248,10 +316,26 @@ export function TrailerFrame({
   );
 }
 
-/** Trailer plus a working sound button — used in the title modal. */
+function SoundHint({ className }: { className?: string }) {
+  return (
+    <button
+      type="button"
+      onClick={openInOwnTab}
+      className={cn(
+        "focus-brand pointer-events-auto flex items-center gap-1.5 rounded-full border border-white/25 bg-black/70 px-3 py-1.5 text-[11px] font-semibold text-white/90 backdrop-blur transition hover:border-white hover:bg-black/85",
+        className,
+      )}
+    >
+      <MuteIcon width={13} height={13} />
+      Sound needs its own tab
+      <span aria-hidden>↗</span>
+    </button>
+  );
+}
+
+/** Trailer for the title modal header. */
 export function TrailerStage({ videoId }: { videoId: string }) {
-  const [muted, setMuted] = useState(false);
-  const [blocked, setBlocked] = useState(false);
+  const { wantSound, attempt, needsTab, toggle, onAudioBlocked, onSoundOk } = useTrailerSound();
 
   return (
     <motion.div
@@ -263,37 +347,31 @@ export function TrailerStage({ videoId }: { videoId: string }) {
     >
       <TrailerFrame
         videoId={videoId}
-        muted={muted}
-        onSoundBlocked={() => {
-          setMuted(true);
-          setBlocked(true);
-        }}
+        wantSound={wantSound}
+        attempt={attempt}
+        onAudioBlocked={onAudioBlocked}
+        onSoundOk={onSoundOk}
       />
+
+      {needsTab && <SoundHint className="absolute bottom-3 left-3 z-20" />}
 
       <button
         type="button"
-        onClick={() => {
-          setMuted((m) => !m);
-          setBlocked(false);
-        }}
-        aria-label={muted ? "Turn trailer sound on" : "Mute trailer"}
-        title={blocked ? "Your browser started the trailer muted — tap for sound" : undefined}
+        onClick={toggle}
+        aria-label={wantSound ? "Mute trailer" : "Turn trailer sound on"}
+        title={needsTab ? "This frame blocks sound — open the site in its own tab" : undefined}
         className="focus-brand pointer-events-auto absolute bottom-3 right-3 z-20 grid h-9 w-9 place-items-center rounded-full border border-white/40 bg-black/55 text-white backdrop-blur transition hover:border-white hover:bg-black/75"
       >
-        {muted ? <MuteIcon width={16} height={16} /> : <VolumeIcon width={16} height={16} />}
+        {wantSound ? <VolumeIcon width={16} height={16} /> : <MuteIcon width={16} height={16} />}
       </button>
     </motion.div>
   );
 }
 
-/**
- * The trailer that plays behind a title page hero.
- * Renders nothing when a title has no trailer, leaving the artwork untouched.
- */
+/** The trailer behind a title page hero, with the same sound ladder. */
 export function HeroTrailer({ tmdbId, kind }: { tmdbId: number; kind: "movie" | "series" }) {
   const videoId = useTrailerKey(tmdbId, kind, 500);
-  const [muted, setMuted] = useState(false);
-  const [blocked, setBlocked] = useState(false);
+  const { wantSound, attempt, needsTab, toggle, onAudioBlocked, onSoundOk } = useTrailerSound();
 
   if (!videoId) return null;
 
@@ -307,26 +385,24 @@ export function HeroTrailer({ tmdbId, kind }: { tmdbId: number; kind: "movie" | 
       >
         <TrailerFrame
           videoId={videoId}
-          muted={muted}
-          onSoundBlocked={() => {
-            setMuted(true);
-            setBlocked(true);
-          }}
+          wantSound={wantSound}
+          attempt={attempt}
+          onAudioBlocked={onAudioBlocked}
+          onSoundOk={onSoundOk}
         />
       </motion.div>
 
+      {needsTab && <SoundHint className="absolute bottom-4 right-4 z-20 hidden md:right-12 md:flex" />}
+
       <button
         type="button"
-        onClick={() => {
-          setMuted((m) => !m);
-          setBlocked(false);
-        }}
-        aria-label={muted ? "Turn trailer sound on" : "Mute trailer"}
-        title={blocked ? "Started muted by your browser — tap for sound" : undefined}
+        onClick={toggle}
+        aria-label={wantSound ? "Mute trailer" : "Turn trailer sound on"}
+        title={needsTab ? "This frame blocks sound — open the site in its own tab" : "Trailer sound"}
         className="focus-brand absolute right-4 top-4 z-20 flex items-center gap-2 rounded-full border border-white/35 bg-black/45 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-[0.14em] text-white/90 backdrop-blur transition hover:border-white hover:bg-black/70 hover:text-white md:right-12"
       >
-        {muted ? <MuteIcon width={14} height={14} /> : <VolumeIcon width={14} height={14} />}
-        {muted ? "Sound off" : "Sound on"}
+        {wantSound ? <VolumeIcon width={14} height={14} /> : <MuteIcon width={14} height={14} />}
+        {wantSound ? "Sound on" : "Sound off"}
       </button>
     </>
   );
