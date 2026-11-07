@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import { PosterTile } from "@/components/row";
 import { Footer } from "@/components/footer";
 import { Navbar } from "@/components/navbar";
-import { genres as allGenres, genreSlug, isKidsSafe } from "@/lib/catalog";
+import { genres as allGenres, genreSlug, visibleFor } from "@/lib/catalog";
 import { useStore } from "@/components/store";
 import type { Genre, Title } from "@/lib/types";
 import { cn } from "@/lib/cn";
@@ -24,10 +24,11 @@ export function BrowseGrid({
   initialGenre?: Genre;
   lockGenre?: boolean;
 }) {
-  const { profile } = useStore();
+  const { profile, settings } = useStore();
+  const hideMature = settings.hideMature;
   const titles = useMemo(
-    () => (profile?.kids ? inputTitles.filter(isKidsSafe) : inputTitles),
-    [inputTitles, profile?.kids],
+    () => inputTitles.filter((title) => visibleFor(title, profile, hideMature)),
+    [inputTitles, profile, hideMature],
   );
   const [genre, setGenre] = useState<Genre | "all">(initialGenre ?? "all");
   const [sort, setSort] = useState<Sort>("popular");

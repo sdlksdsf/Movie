@@ -4,11 +4,12 @@ import { Billboard } from "@/components/billboard";
 import { Footer } from "@/components/footer";
 import { Navbar } from "@/components/navbar";
 import { LiveRows } from "@/components/live-rows";
+import { LazySection } from "@/components/lazy-section";
 import { PersonalRows } from "@/components/personal-rows";
 import { Row, ContinueRow } from "@/components/row";
 import { useStore, type WatchProgress } from "@/components/store";
 import { dynamicRows, rows } from "@/data/rows";
-import { getTitle, isKidsSafe } from "@/lib/catalog";
+import { getTitle, visibleFor } from "@/lib/catalog";
 import { useMemo } from "react";
 
 export function HomePage() {
@@ -29,15 +30,16 @@ export function HomePage() {
   }, [progress]);
 
   const kids = Boolean(profile?.kids);
+  const { settings } = useStore();
   const keepKidsSafe = useMemo(
     () => (slugs: string[]) =>
-      kids
+      kids || profile?.maturity !== "all" || settings.hideMature
         ? slugs.filter((slug) => {
             const title = getTitle(slug);
-            return Boolean(title && isKidsSafe(title));
+            return Boolean(title && visibleFor(title, profile, settings.hideMature));
           })
         : slugs,
-    [kids],
+    [kids, profile, settings.hideMature],
   );
 
   const shelves = useMemo(() => {
@@ -68,11 +70,19 @@ export function HomePage() {
 
           <PersonalRows />
 
-          <LiveRows />
+          <LazySection minHeight={320} rootMargin="900px">
+            <LiveRows />
+          </LazySection>
 
-          {shelves.map((row, i) => (
-            <Row key={row.id} row={row} priority={i < 2} />
-          ))}
+          {shelves.map((row, i) =>
+            i < 3 ? (
+              <Row key={row.id} row={row} priority={i < 2} />
+            ) : (
+              <LazySection key={row.id} minHeight={300}>
+                <Row row={row} />
+              </LazySection>
+            ),
+          )}
         </div>
       </main>
       <Footer />

@@ -3,22 +3,27 @@ import { genres, genreSlug } from "@/lib/catalog";
 
 const columns = [
   [
-    { label: "Audio Description", href: "/browse" },
-    { label: "Help Centre", href: "/browse" },
-    { label: "Gift Cards", href: "/browse" },
-    { label: "Media Centre", href: "/browse" },
+    { label: "Home", href: "/" },
+    { label: "TV Shows", href: "/tv-shows" },
+    { label: "Movies", href: "/movies" },
+    { label: "Anime", href: "/anime" },
   ],
   [
-    { label: "Investor Relations", href: "/browse" },
-    { label: "Jobs", href: "/browse" },
-    { label: "Terms of Use", href: "/browse" },
-    { label: "Privacy", href: "/browse" },
+    { label: "Browse all titles", href: "/browse" },
+    { label: "My List", href: "/my-list" },
+    { label: "New & Popular", href: "/new-popular" },
   ],
   [
-    { label: "Legal Notices", href: "/browse" },
-    { label: "Cookie Preferences", href: "/browse" },
-    { label: "Corporate Information", href: "/browse" },
-    { label: "Contact Us", href: "/browse" },
+    { label: "Settings", href: "/settings" },
+    { label: "Appearance", href: "/settings?tab=appearance" },
+    { label: "Developer status", href: "/settings?tab=developer" },
+    { label: "About NOFLIX", href: "/about" },
+  ],
+  [
+    { label: "Privacy policy", href: "/privacy" },
+    { label: "Terms of use", href: "/terms" },
+    { label: "Copyright & DMCA", href: "/dmca" },
+    { label: "Source on GitHub", href: "https://github.com/sdlksdsf/Movie" },
   ],
 ];
 
@@ -27,15 +32,20 @@ export function Footer() {
     <footer className="mt-10 border-t border-white/5 px-4 pb-16 pt-10 text-[13px] text-[#808080] md:px-12">
       <div className="mx-auto max-w-[1100px]">
         <div className="mb-6 flex items-center gap-4 text-white/80">
-          {["facebook", "instagram", "twitter", "youtube"].map((network) => (
-            <span
-              key={network}
-              aria-label={network}
-              className="grid h-7 w-7 place-items-center rounded-full border border-white/25 text-[10px] uppercase tracking-wider transition hover:border-white/60"
-            >
-              {network.slice(0, 2)}
-            </span>
-          ))}
+          <a
+          href="https://github.com/sdlksdsf/Movie"
+          target="_blank"
+          rel="noreferrer"
+          className="rounded-full border border-white/25 px-3 py-1 text-[11px] uppercase tracking-wider transition hover:border-white/60 hover:text-white"
+        >
+          GitHub ↗
+        </a>
+        <a
+          href="/about"
+          className="rounded-full border border-white/25 px-3 py-1 text-[11px] uppercase tracking-wider transition hover:border-white/60 hover:text-white"
+        >
+          About NOFLIX
+        </a>
         </div>
 
         <div className="grid grid-cols-2 gap-y-3 sm:grid-cols-4">

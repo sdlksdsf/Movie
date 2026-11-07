@@ -55,7 +55,7 @@ export function SoundNotice() {
           <button
             type="button"
             onClick={openInOwnTab}
-            className="focus-brand shrink-0 rounded-md bg-[#e50914] px-2.5 py-1.5 text-[11.5px] font-semibold text-white transition hover:bg-[#f6121d]"
+            className="focus-brand shrink-0 rounded-md bg-[var(--nf-accent)] px-2.5 py-1.5 text-[11.5px] font-semibold text-white transition hover:brightness-110"
           >
             Open ↗
           </button>

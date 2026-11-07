@@ -138,7 +138,7 @@ export function PosterCard({
   expand?: boolean;
 }) {
   const router = useRouter();
-  const { openTitle, inList, toggleList, toast } = useStore();
+  const { openTitle, inList, toggleList, toast, settings } = useStore();
   const [hovered, setHovered] = useState(false);
   const showTimer = useRef<number | null>(null);
   const hideTimer = useRef<number | null>(null);
@@ -169,7 +169,7 @@ export function PosterCard({
   }, []);
 
   const scheduleOpen = (event: React.PointerEvent) => {
-    if (event.pointerType !== "mouse" || !expand) return;
+    if (event.pointerType !== "mouse" || !expand || !settings.hoverPreviews) return;
     if (hideTimer.current) window.clearTimeout(hideTimer.current);
     if (showTimer.current) window.clearTimeout(showTimer.current);
     showTimer.current = window.setTimeout(openPreview, 420);
@@ -206,7 +206,7 @@ export function PosterCard({
         onClick={() => openTitle(title.slug)}
         className={cn(
           "group relative block shrink-0 snap-start overflow-hidden rounded-[4px] bg-[#222] text-left ring-1 ring-white/5 transition-[transform,box-shadow,ring] duration-300 will-change-transform",
-          "w-[124px] sm:w-[142px] md:w-[160px] xl:w-[182px]",
+          "w-[var(--nf-card-w,186px)]",
           "aspect-[2/3] hover:z-10 hover:scale-[1.05] hover:ring-white/30 hover:shadow-[0_18px_40px_-12px_rgba(0,0,0,0.9)]",
         )}
       >

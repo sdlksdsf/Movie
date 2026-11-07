@@ -25,6 +25,10 @@ export type LiveItem = {
   rating?: number;
   overview?: string;
   anime?: boolean;
+  /** TMDB genre ids — lets kids profiles filter live results properly */
+  genres?: number[];
+  /** TMDB "adult" flag */
+  mature?: boolean;
 };
 
 import { TMDB_API_KEY } from "@/lib/tmdb-key";
@@ -93,6 +97,8 @@ function mapTmdb(item: TmdbItem, kind?: "movie" | "series", anime = false): Live
     rating: item.vote_average,
     overview: item.overview,
     anime: anime || (item.original_language === "ja" && (item.genre_ids ?? []).includes(16)),
+    genres: item.genre_ids ?? [],
+    mature: Boolean((item as { adult?: boolean }).adult),
   };
 }
 

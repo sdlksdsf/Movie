@@ -8,6 +8,7 @@ import { Artwork } from "@/components/artwork";
 import { BellIcon, ChevronDownIcon, SearchIcon } from "@/components/icons";
 import { useStore } from "@/components/store";
 import { Wordmark } from "@/components/wordmark";
+import { ProfileAvatar } from "@/components/avatar";
 import { cn } from "@/lib/cn";
 import { allTitles } from "@/lib/catalog";
 
@@ -128,7 +129,14 @@ export function Navbar() {
             <SearchIcon width={19} height={19} />
           </button>
 
-          <span className="hidden text-[13px] text-white/80 sm:block">Kids</span>
+          {hydrated && profile?.kids && (
+            <Link
+              href="/settings?tab=profile"
+              className="hidden rounded bg-[#22c55e]/20 px-2 py-1 text-[11px] font-bold uppercase tracking-[0.16em] text-[#86efac] sm:block"
+            >
+              Kids
+            </Link>
+          )}
 
           <div className="relative">
             <button
@@ -185,14 +193,13 @@ export function Navbar() {
               className="focus-brand flex items-center gap-2 rounded-md p-0.5 transition hover:opacity-90"
               aria-label="Account menu"
             >
-              <span
-                className={cn(
-                  "grid h-8 w-8 place-items-center rounded bg-gradient-to-br text-sm",
-                  hydrated && profile ? profile.gradient : "from-[#e50914] to-[#7f1d1d]",
-                )}
-              >
-                {hydrated && profile ? profile.emoji : "🍿"}
-              </span>
+              <ProfileAvatar
+                avatar={hydrated && profile ? profile.avatar : "robot"}
+                accent={hydrated && profile ? profile.accent : "#e50914"}
+                rounded="rounded"
+                className="h-8 w-8"
+                kids={hydrated && profile?.kids}
+              />
               <ChevronDownIcon
                 width={16}
                 height={16}
@@ -223,14 +230,12 @@ export function Navbar() {
                           }}
                           className="flex w-full items-center gap-3 px-4 py-2 text-sm text-white/90 transition hover:underline"
                         >
-                          <span
-                            className={cn(
-                              "grid h-8 w-8 place-items-center rounded bg-gradient-to-br",
-                              p.gradient,
-                            )}
-                          >
-                            {p.emoji}
-                          </span>
+                          <ProfileAvatar
+                            avatar={p.avatar}
+                            accent={p.accent}
+                            rounded="rounded"
+                            className="h-8 w-8"
+                          />
                           {p.name}
                         </button>
                       ))}
@@ -259,6 +264,20 @@ export function Navbar() {
                       className="block px-4 py-2 text-white/90 transition hover:underline"
                     >
                       Browse All Titles
+                    </Link>
+                    <Link
+                      href="/settings"
+                      onClick={() => setMenu(null)}
+                      className="block px-4 py-2 text-white/90 transition hover:underline"
+                    >
+                      Settings
+                    </Link>
+                    <Link
+                      href="/settings?tab=developer"
+                      onClick={() => setMenu(null)}
+                      className="block px-4 py-2 text-white/90 transition hover:underline"
+                    >
+                      Developer options
                     </Link>
                     <p className="px-4 pt-3 pb-1 text-xs leading-relaxed text-white/35">
                       Demo build — data &amp; artwork belong to their owners.

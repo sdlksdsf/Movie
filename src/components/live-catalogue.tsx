@@ -92,7 +92,7 @@ export function LiveCatalogue() {
         <div className="mx-auto max-w-[1500px] px-4 md:px-12">
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-[#e50914]">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-[var(--nf-accent)]">
                 Browse
               </p>
               <h1 className="mt-1 font-display text-[clamp(1.6rem,4vw,2.6rem)] leading-none text-white">
@@ -181,7 +181,7 @@ export function LiveCatalogue() {
                     </span>
                   </span>
                   {item.anime && (
-                    <span className="absolute left-1 top-1 rounded-sm bg-[#e50914] px-1 py-0.5 text-[8px] font-bold uppercase tracking-wider text-white">
+                    <span className="absolute left-1 top-1 rounded-sm bg-[var(--nf-accent)] px-1 py-0.5 text-[8px] font-bold uppercase tracking-wider text-white">
                       Anime
                     </span>
                   )}

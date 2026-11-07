@@ -6,7 +6,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { CloseIcon, SearchIcon } from "@/components/icons";
 import { useStore } from "@/components/store";
 import { Artwork } from "@/components/artwork";
-import { allTitles, genres, genreSlug, isKidsSafe, searchTitles, shortMeta } from "@/lib/catalog";
+import { allTitles, genres, genreSlug, searchTitles, shortMeta, visibleFor } from "@/lib/catalog";
 
 const genreColors = [
   "#e50914",
@@ -42,7 +42,7 @@ export function SearchOverlay() {
 
   const results = useMemo(() => {
     const hits = searchTitles(query, 30);
-    return profile?.kids ? hits.filter(isKidsSafe) : hits;
+    return hits.filter((title) => visibleFor(title, profile));
   }, [query, profile?.kids]);
 
   // ask the metadata pipeline for anything missing from the bundled catalogue
@@ -75,7 +75,7 @@ export function SearchOverlay() {
     };
   }, [query, results]);
   const suggestions = useMemo(() => {
-    const pool = profile?.kids ? allTitles.filter(isKidsSafe) : allTitles;
+    const pool = allTitles.filter((title) => visibleFor(title, profile));
     return [...pool].sort((a, b) => b.rating - a.rating).slice(0, 8);
   }, [profile?.kids]);
 

@@ -14,7 +14,7 @@ import {
 } from "@/components/icons";
 import { useStore } from "@/components/store";
 import { PosterTile } from "@/components/row";
-import { TrailerStage, useTrailerKey } from "@/components/trailer";
+import { TrailerStage, useTrailerKeys } from "@/components/trailer";
 import { EpisodeStill } from "@/components/episode-still";
 import {
   formatRuntime,
@@ -51,7 +51,7 @@ function ModalBody({
   const similar = useMemo(() => similarTo(title, 9), [title]);
   const saved = inList(title.slug);
   /* Netflix-style: the trailer starts on its own a beat after the card opens */
-  const trailerId = useTrailerKey(title.tmdbId, title.kind, 650);
+  const { videoId: trailerId, advance: nextTrailer } = useTrailerKeys(title.tmdbId, title.kind, 650);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -99,7 +99,7 @@ function ModalBody({
           <div className="absolute inset-0 scale-110 opacity-60 blur-[2px]">
             <Artwork slug={title.slug} name={title.name} kind="backdrop" accent={title.accent} priority sizes="900px" />
           </div>
-          {trailerId && <TrailerStage videoId={trailerId} />}
+          {trailerId && <TrailerStage videoId={trailerId} onFail={nextTrailer} />}
           <div className="absolute inset-0">
             <div
               className="absolute inset-0"

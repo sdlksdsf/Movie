@@ -10,29 +10,53 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import type { AvatarId, MaturityLevel } from "@/lib/avatars";
+import { ACCENTS } from "@/lib/avatars";
+import { isPlayerId, type PlayerId, type Quality } from "@/lib/players";
 
 export type Profile = {
   id: string;
   name: string;
-  gradient: string;
-  emoji: string;
+  avatar: AvatarId;
+  /** tint behind the avatar + the profile's own accent colour */
+  accent: string;
   /** kids profiles only see family-safe titles */
   kids: boolean;
+  maturity: MaturityLevel;
+  autoplay: boolean;
+  createdAt: number;
 };
 
-/** Avatar presets offered on the profile screen. */
-export const AVATARS: Array<{ emoji: string; gradient: string }> = [
-  { emoji: "🍿", gradient: "from-[#e50914] via-[#7f1d1d] to-[#1a1a1a]" },
-  { emoji: "🎬", gradient: "from-[#2563eb] via-[#1e3a8a] to-[#0b1120]" },
-  { emoji: "🦸", gradient: "from-[#f59e0b] via-[#b45309] to-[#1a1206]" },
-  { emoji: "👽", gradient: "from-[#22c55e] via-[#15803d] to-[#04150a]" },
-  { emoji: "🐉", gradient: "from-[#a855f7] via-[#6b21a8] to-[#12021f]" },
-  { emoji: "🎧", gradient: "from-[#06b6d4] via-[#0e7490] to-[#04121a]" },
-  { emoji: "👾", gradient: "from-[#ec4899] via-[#9d174d] to-[#1a0410]" },
-  { emoji: "🐼", gradient: "from-[#f472b6] via-[#be185d] to-[#20040f]" },
-  { emoji: "🧑‍🚀", gradient: "from-[#64748b] via-[#334155] to-[#0b1018]" },
-  { emoji: "🦊", gradient: "from-[#fb923c] via-[#c2410c] to-[#1a0a03]" },
-];
+export type Settings = {
+  /** UI accent colour, drives buttons, focuses and highlights */
+  accent: string;
+  /** how big shelf cards render */
+  density: "compact" | "cozy" | "large";
+  hoverPreviews: boolean;
+  reduceMotion: boolean;
+  autoplayTrailers: boolean;
+  /** lighter data: fewer live rows, smaller artwork */
+  dataSaver: boolean;
+  defaultPlayer: PlayerId;
+  quality: Quality;
+  autoplayNext: boolean;
+  language: string;
+  hideMature: boolean;
+};
+
+export const DEFAULT_SETTINGS: Settings = {
+  accent: ACCENTS[0].value,
+  density: "cozy",
+  hoverPreviews: true,
+  reduceMotion: false,
+  autoplayTrailers: true,
+  dataSaver: false,
+  defaultPlayer: "framex",
+  quality: "1080p",
+  autoplayNext: true,
+  language: "English",
+  hideMature: false,
+};
 
 export type WatchProgress = {
   season: number;
@@ -53,13 +77,18 @@ type Store = {
   profile: Profile | null;
   setProfile: (p: Profile | null) => void;
   profiles: Profile[];
-  addProfile: (input: Omit<Profile, "id">) => Profile;
+  addProfile: (input: Omit<Profile, "id" | "createdAt">) => Profile;
+  updateProfile: (id: string, patch: Partial<Omit<Profile, "id">>) => void;
   removeProfile: (id: string) => void;
   myList: string[];
   inList: (slug: string) => boolean;
   toggleList: (slug: string) => void;
   progress: Record<string, WatchProgress>;
   setProgress: (slug: string, value: WatchProgress) => void;
+  settings: Settings;
+  updateSettings: (patch: Partial<Settings>) => void;
+  resetSettings: () => void;
+  clearEverything: () => void;
   activeSlug: string | null;
   openTitle: (slug: string | null) => void;
   searchOpen: boolean;
@@ -90,12 +119,50 @@ const write = (key: string, value: unknown) => {
   }
 };
 
+const EMOJI_TO_AVATAR: Record<string, AvatarId> = {
+  "🍿": "reel",
+  "🎬": "reel",
+  "🦸": "hero",
+  "👽": "alien",
+  "🐉": "dragon",
+  "🎧": "ninja",
+  "👾": "alien",
+  "🐼": "panda",
+  "🧑‍🚀": "astro",
+  "🦊": "fox",
+};
+
+const MATURE: MaturityLevel[] = ["kids", "7", "13", "16", "all"];
+
+/** Upgrades profiles saved by older builds (emoji + tailwind gradient). */
+function migrateProfile(raw: Record<string, unknown>): Profile {
+  const emoji = typeof raw.emoji === "string" ? raw.emoji : "";
+  const gradient = typeof raw.gradient === "string" ? raw.gradient : "";
+  const hex = gradient.match(/#[0-9a-f]{6}/i)?.[0] ?? ACCENTS[0].value;
+  const maturity = MATURE.includes(raw.maturity as MaturityLevel)
+    ? (raw.maturity as MaturityLevel)
+    : raw.kids
+      ? "kids"
+      : "all";
+  return {
+    id: typeof raw.id === "string" ? raw.id : `p_${Math.random().toString(36).slice(2)}`,
+    name: typeof raw.name === "string" ? raw.name : "Profile",
+    avatar: (raw.avatar as AvatarId) ?? EMOJI_TO_AVATAR[emoji] ?? "robot",
+    accent: typeof raw.accent === "string" ? raw.accent : hex,
+    kids: Boolean(raw.kids) || maturity === "kids",
+    maturity,
+    autoplay: raw.autoplay === undefined ? true : Boolean(raw.autoplay),
+    createdAt: typeof raw.createdAt === "number" ? raw.createdAt : Date.now(),
+  };
+}
+
 export function StoreProvider({ children }: { children: ReactNode }) {
   const [hydrated, setHydrated] = useState(false);
   const [profile, setProfileState] = useState<Profile | null>(null);
   const [profiles, setProfilesState] = useState<Profile[]>([]);
   const [myList, setMyList] = useState<string[]>([]);
   const [progress, setProgressState] = useState<Record<string, WatchProgress>>({});
+  const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
   const [activeSlug, setActiveSlug] = useState<string | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
@@ -103,29 +170,73 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const toastId = useRef(0);
 
   useEffect(() => {
-    const savedProfile = read<Profile | null>("nf.profile", null);
-    setProfileState(savedProfile);
+    const storedProfiles = read<Record<string, unknown>[]>("nf.profiles", []).map(migrateProfile);
+    const storedProfile = read<Record<string, unknown> | null>("nf.profile", null);
+
+    setProfilesState(storedProfiles);
+    const active = storedProfile ? migrateProfile(storedProfile) : null;
+    setProfileState(active);
     /* the title card animation runs on every visit, not just the first one */
-    if (savedProfile) setSplash(true);
-    setProfilesState(read<Profile[]>("nf.profiles", []));
+    if (active) setSplash(true);
+
     setMyList(read<string[]>("nf.mylist", []));
     setProgressState(read<Record<string, WatchProgress>>("nf.progress", {}));
+    const storedSettings = read<Partial<Settings>>("nf.settings", {});
+    if (!storedSettings.defaultPlayer) {
+      const lastServer = window.localStorage.getItem("nf.player");
+      if (lastServer && isPlayerId(lastServer)) storedSettings.defaultPlayer = lastServer;
+    }
+    setSettings({ ...DEFAULT_SETTINGS, ...storedSettings });
     setHydrated(true);
   }, []);
+
+  /* keep the document in sync with the chosen look */
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const root = document.documentElement;
+    root.style.setProperty("--nf-accent", settings.accent);
+    root.dataset.density = settings.density;
+    root.dataset.motion = settings.reduceMotion ? "off" : "on";
+    root.dataset.saver = settings.dataSaver ? "on" : "off";
+    root.dataset.hover = settings.hoverPreviews ? "on" : "off";
+    root.dataset.kids = profile?.kids ? "on" : "off";
+
+    /* the player reads these plain (unquoted) keys on mount */
+    try {
+      window.localStorage.setItem("nf.player", settings.defaultPlayer);
+      window.localStorage.setItem("nf.quality", settings.quality);
+    } catch {
+      /* ignore */
+    }
+  }, [settings, profile?.kids]);
 
   const setProfile = useCallback((p: Profile | null) => {
     setProfileState(p);
     write("nf.profile", p);
   }, []);
 
-  const addProfile = useCallback((input: Omit<Profile, "id">) => {
-    const created: Profile = { ...input, id: `p_${Date.now().toString(36)}` };
+  const addProfile = useCallback((input: Omit<Profile, "id" | "createdAt">) => {
+    const created: Profile = { ...input, id: `p_${Date.now().toString(36)}`, createdAt: Date.now() };
     setProfilesState((current) => {
       const next = [...current, created];
       write("nf.profiles", next);
       return next;
     });
     return created;
+  }, []);
+
+  const updateProfile = useCallback((id: string, patch: Partial<Omit<Profile, "id">>) => {
+    setProfilesState((current) => {
+      const next = current.map((p) => (p.id === id ? { ...p, ...patch } : p));
+      write("nf.profiles", next);
+      return next;
+    });
+    setProfileState((current) => {
+      if (current?.id !== id) return current;
+      const next = { ...current, ...patch };
+      write("nf.profile", next);
+      return next;
+    });
   }, []);
 
   const removeProfile = useCallback((id: string) => {
@@ -141,17 +252,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
-  const toggleList = useCallback(
-    (slug: string) => {
-      setMyList((current) => {
-        const has = current.includes(slug);
-        const next = has ? current.filter((s) => s !== slug) : [slug, ...current];
-        write("nf.mylist", next);
-        return next;
-      });
-    },
-    [],
-  );
+  const toggleList = useCallback((slug: string) => {
+    setMyList((current) => {
+      const has = current.includes(slug);
+      const next = has ? current.filter((s) => s !== slug) : [slug, ...current];
+      write("nf.mylist", next);
+      return next;
+    });
+  }, []);
 
   const inList = useCallback((slug: string) => myList.includes(slug), [myList]);
 
@@ -161,6 +269,34 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       write("nf.progress", next);
       return next;
     });
+  }, []);
+
+  const updateSettings = useCallback((patch: Partial<Settings>) => {
+    setSettings((current) => {
+      const next = { ...current, ...patch };
+      write("nf.settings", next);
+      return next;
+    });
+  }, []);
+
+  const resetSettings = useCallback(() => {
+    setSettings(DEFAULT_SETTINGS);
+    write("nf.settings", DEFAULT_SETTINGS);
+  }, []);
+
+  const clearEverything = useCallback(() => {
+    try {
+      for (const key of Object.keys(window.localStorage)) {
+        if (key.startsWith("nf.")) window.localStorage.removeItem(key);
+      }
+    } catch {
+      /* ignore */
+    }
+    setProfilesState([]);
+    setProfileState(null);
+    setMyList([]);
+    setProgressState({});
+    setSettings(DEFAULT_SETTINGS);
   }, []);
 
   const toast = useCallback((message: string) => {
@@ -208,12 +344,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setProfile,
       profiles,
       addProfile,
+      updateProfile,
       removeProfile,
       myList,
       inList,
       toggleList,
       progress,
       setProgress,
+      settings,
+      updateSettings,
+      resetSettings,
+      clearEverything,
       activeSlug,
       openTitle: setActiveSlug,
       searchOpen,
@@ -229,12 +370,17 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setProfile,
       profiles,
       addProfile,
+      updateProfile,
       removeProfile,
       myList,
       inList,
       toggleList,
       progress,
       setProgress,
+      settings,
+      updateSettings,
+      resetSettings,
+      clearEverything,
       activeSlug,
       searchOpen,
       toast,
@@ -251,5 +397,3 @@ export function useStore() {
   if (!ctx) throw new Error("useStore must be used inside <StoreProvider>");
   return ctx;
 }
-
-

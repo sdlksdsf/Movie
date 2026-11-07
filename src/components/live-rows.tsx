@@ -82,7 +82,19 @@ export function LiveRows({ variant = "home" }: { variant?: "home" | "anime" }) {
     );
   };
 
-  const visible = (items: LiveItem[]) => (kids ? items.filter((item) => (item.rating ?? 0) >= 6.5) : items);
+  /** kids get animation / family only, and nothing horror, crime or adult-flagged */
+  const KIDS_GENRES = [16, 10751, 10762, 10751];
+  const BLOCKED = [27, 53, 80, 10752, 10768];
+  const visible = (items: LiveItem[]) =>
+    kids
+      ? items.filter((item) => {
+          if (item.mature) return false;
+          const genres = item.genres ?? [];
+          if (genres.some((g) => BLOCKED.includes(g))) return false;
+          const family = genres.length ? genres.some((g) => KIDS_GENRES.includes(g)) : false;
+          return family && (item.rating ?? 0) >= 6;
+        })
+      : items;
 
   if (loading) {
     return (

@@ -23,6 +23,7 @@ import {
   PLAYERS,
   QUALITIES,
   buildSrc,
+  canPlay,
   isPlayerId,
   otherPlayer,
   playerMeta,
@@ -150,6 +151,7 @@ export function Player({
   const pauseTimer = useRef<number | null>(null);
   const nudgeTimer = useRef<number | null>(null);
   const nudgeHide = useRef<number | null>(null);
+  const tried = useRef<Set<PlayerId>>(new Set());
   const fallbackUsed = useRef(false);
   const dismissed = useRef(false);
 
@@ -190,13 +192,17 @@ export function Player({
 
   /* ---------------------------------------------------------------- source */
 
+  /** Walk the server chain: frameXTV → CineLite → RiveStream, each at most once. */
   const hardFallback = useCallback(() => {
-    if (fallbackUsed.current) return;
-    const next = resolvePlayer(otherPlayer(player), title);
-    if (next === player) return;
+    const candidate = [...PLAYERS]
+      .sort((a, b) => a.rank - b.rank)
+      .map((entry) => entry.id)
+      .find((id) => id !== player && canPlay(id, title) && !tried.current.has(id));
+    if (!candidate) return;
+    tried.current.add(player);
     fallbackUsed.current = true;
-    setPlayer(next);
-    toast(`${playerMeta(player).label} didn't respond — switched to ${playerMeta(next).label}`);
+    setPlayer(candidate);
+    toast(`${playerMeta(player).label} didn't respond — trying ${playerMeta(candidate).label}`);
   }, [player, title, toast]);
 
   /* per-source reset: cheap, so switching feels instant */
@@ -394,7 +400,7 @@ export function Player({
       toast(`${playerMeta(next).label} has no stream for this title`);
       return;
     }
-    fallbackUsed.current = false;
+    tried.current.clear();
     setPlayer(next);
     ls.set("nf.player", next);
     toast(`Playing from ${playerMeta(next).label}`);
@@ -470,7 +476,7 @@ export function Player({
               initial={{ x: "-40%" }}
               animate={{ x: "140%" }}
               transition={{ repeat: Infinity, duration: 1.05, ease: "linear" }}
-              className="h-full w-1/3 bg-[#e50914]"
+              className="h-full w-1/3 bg-[var(--nf-accent)]"
             />
           </motion.div>
         )}
@@ -580,7 +586,7 @@ export function Player({
                       <span className="flex items-center gap-1.5">
                         {item.label}
                         {item.badge && (
-                          <span className="rounded-sm bg-[#e50914] px-1 py-[1px] text-[8px] font-bold uppercase tracking-wide text-white">
+                          <span className="rounded-sm bg-[var(--nf-accent)] px-1 py-[1px] text-[8px] font-bold uppercase tracking-wide text-white">
                             {item.badge}
                           </span>
                         )}
@@ -679,7 +685,7 @@ export function Player({
               exit={{ opacity: 0, y: 10 }}
               transition={{ duration: 0.2 }}
               onClick={restart}
-              className="pointer-events-auto absolute bottom-4 left-3 flex items-center gap-2 rounded-full bg-[#e50914] px-3.5 py-2 text-[12px] font-semibold text-white shadow-lg shadow-black/50 transition hover:bg-[#f6121d] md:bottom-6 md:left-6"
+              className="pointer-events-auto absolute bottom-4 left-3 flex items-center gap-2 rounded-full bg-[var(--nf-accent)] px-3.5 py-2 text-[12px] font-semibold text-white shadow-lg shadow-black/50 transition hover:brightness-110 md:bottom-6 md:left-6"
             >
               <PlayIcon width={13} height={13} />
               Stream paused? Tap to start
@@ -698,7 +704,7 @@ export function Player({
               className="pointer-events-auto absolute bottom-[92px] right-3 z-30 w-[320px] max-w-[92vw] overflow-hidden rounded-lg border border-white/10 bg-[#0d0d0d]/95 shadow-[0_18px_60px_rgba(0,0,0,0.65)] backdrop-blur-xl md:bottom-[104px] md:right-6"
             >
               <div className="flex items-center justify-between border-b border-white/10 px-3 py-2">
-                <p className="text-[9.5px] font-semibold uppercase tracking-[0.26em] text-[#e50914]">
+                <p className="text-[9.5px] font-semibold uppercase tracking-[0.26em] text-[var(--nf-accent)]">
                   Up next
                 </p>
                 <span className="text-[10px] text-white/45">
@@ -771,7 +777,7 @@ export function Player({
             >
               <div className="flex items-start justify-between gap-3 border-b border-white/10 px-3.5 py-2.5">
                 <div>
-                  <p className="text-[9.5px] font-semibold uppercase tracking-[0.26em] text-[#e50914]">
+                  <p className="text-[9.5px] font-semibold uppercase tracking-[0.26em] text-[var(--nf-accent)]">
                     Paused
                   </p>
                   <h2 className="mt-0.5 text-[13.5px] font-semibold text-white md:text-[15px]">
@@ -872,7 +878,7 @@ function Row({
         disabled && "cursor-not-allowed opacity-40 hover:bg-transparent",
       )}
     >
-      <span className="grid w-4 shrink-0 place-items-center text-[#e50914]">
+      <span className="grid w-4 shrink-0 place-items-center text-[var(--nf-accent)]">
         {active ? <CheckIcon width={13} height={13} /> : null}
       </span>
       <span className="min-w-0 flex-1">

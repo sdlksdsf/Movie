@@ -127,7 +127,7 @@ export function Billboard() {
                 <span className="font-display text-lg leading-none text-netflix-red">N</span>
                 <span>{active.anime ? "Anime" : active.kind === "series" ? "Series" : "Film"}</span>
                 {active.badge && (
-                  <span className="rounded-sm bg-[#e50914] px-1.5 py-[1px] text-[9px] font-bold tracking-[0.12em] text-white">
+                  <span className="rounded-sm bg-[var(--nf-accent)] px-1.5 py-[1px] text-[9px] font-bold tracking-[0.12em] text-white">
                     {active.badge}
                   </span>
                 )}

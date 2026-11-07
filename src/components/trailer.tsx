@@ -4,19 +4,30 @@ import { motion } from "framer-motion";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { MuteIcon, VolumeIcon } from "@/components/icons";
 import { openInOwnTab, soundIsBlocked } from "@/lib/media";
-import { findTrailer, trailerEmbedUrl } from "@/lib/trailer";
+import { findTrailerList, trailerEmbedUrl } from "@/lib/trailer";
 import { cn } from "@/lib/cn";
 
-/** Resolve (and cache) the YouTube key for a title, starting after `delay` ms. */
-export function useTrailerKey(tmdbId?: number, kind: "movie" | "series" = "movie", delay = 350) {
-  const [videoId, setVideoId] = useState<string | null>(null);
+/**
+ * Resolve every usable YouTube key for a title (TMDB first, Cinemeta as a
+ * backstop) and walk the list when an embed refuses to play — that is what
+ * makes the trailers that "never worked" work.
+ */
+export function useTrailerKeys(
+  tmdbId?: number,
+  kind: "movie" | "series" = "movie",
+  delay = 350,
+) {
+  const [keys, setKeys] = useState<string[]>([]);
+  const [index, setIndex] = useState(0);
 
   useEffect(() => {
     if (!tmdbId) return;
     let alive = true;
+    setKeys([]);
+    setIndex(0);
     const timer = window.setTimeout(() => {
-      void findTrailer(tmdbId, kind).then((key) => {
-        if (alive && key) setVideoId(key);
+      void findTrailerList(tmdbId, kind).then((list) => {
+        if (alive) setKeys(list);
       });
     }, delay);
     return () => {
@@ -25,7 +36,22 @@ export function useTrailerKey(tmdbId?: number, kind: "movie" | "series" = "movie
     };
   }, [tmdbId, kind, delay]);
 
-  return videoId;
+  const advance = useCallback(() => {
+    setIndex((current) => (current + 1 < keys.length ? current + 1 : current));
+  }, [keys.length]);
+
+  return {
+    videoId: keys[index] ?? null,
+    keys,
+    index,
+    advance,
+    hasMore: index < keys.length - 1,
+  };
+}
+
+/** Back-compat: the first usable key. */
+export function useTrailerKey(tmdbId?: number, kind: "movie" | "series" = "movie", delay = 350) {
+  return useTrailerKeys(tmdbId, kind, delay).videoId;
 }
 
 /* ------------------------------------------------------------------ *
@@ -139,6 +165,7 @@ export function TrailerFrame({
   attempt,
   onAudioBlocked,
   onSoundOk,
+  onFail,
   className,
 }: {
   videoId: string;
@@ -146,6 +173,8 @@ export function TrailerFrame({
   attempt: number;
   onAudioBlocked?: () => void;
   onSoundOk?: () => void;
+  /** called when YouTube refuses this video (age gate, embedding disabled, …) */
+  onFail?: () => void;
   className?: string;
 }) {
   const host = useRef<HTMLDivElement>(null);
@@ -156,6 +185,8 @@ export function TrailerFrame({
   blockedHandler.current = onAudioBlocked;
   const okHandler = useRef(onSoundOk);
   okHandler.current = onSoundOk;
+  const failHandler = useRef(onFail);
+  failHandler.current = onFail;
   const resumeAt = useRef(0);
   const [fallback, setFallback] = useState(false);
   const [origin, setOrigin] = useState("");
@@ -240,6 +271,10 @@ export function TrailerFrame({
             origin: window.location.origin,
           },
           events: {
+            onError: () => {
+              /* 2 / 5 / 100 / 101 / 150 — dead video or embedding blocked */
+              failHandler.current?.();
+            },
             onReady: () => {
               player.current = instance;
               try {
@@ -261,8 +296,21 @@ export function TrailerFrame({
     /* a trailer must never sit paused */
     const guard = window.setInterval(ensurePlaying, 1500);
 
+    /* …and if it never starts at all, try the next candidate key */
+    const deadTimer = window.setTimeout(() => {
+      if (!player.current) return;
+      try {
+        if (player.current.getPlayerState() === -1 || player.current.getPlayerState() === 5) {
+          failHandler.current?.();
+        }
+      } catch {
+        failHandler.current?.();
+      }
+    }, 9000);
+
     return () => {
       disposed = true;
+      window.clearTimeout(deadTimer);
       window.clearInterval(guard);
       const instance = player.current;
       player.current = null;
@@ -334,7 +382,7 @@ function SoundHint({ className }: { className?: string }) {
 }
 
 /** Trailer for the title modal header. */
-export function TrailerStage({ videoId }: { videoId: string }) {
+export function TrailerStage({ videoId, onFail }: { videoId: string; onFail?: () => void }) {
   const { wantSound, attempt, needsTab, toggle, onAudioBlocked, onSoundOk } = useTrailerSound();
 
   return (
