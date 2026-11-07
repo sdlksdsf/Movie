@@ -1,6 +1,7 @@
 import type { Genre, Title } from "@/lib/types";
 import entries from "./catalog.generated.json";
 import animeEntries from "./anime.generated.json";
+import popularEntries from "./popular.generated.json";
 
 /**
  * Titles produced by the metadata pipeline rather than written by hand.
@@ -95,8 +96,23 @@ export const generatedArt: Record<string, { poster: string; backdrop: string }> 
 
 const allEntries: Entry[] = [
   ...(entries as Entry[]),
+  ...(popularEntries as Entry[]),
   ...(animeEntries as Entry[]).map((entry) => ({ ...entry, anime: true })),
 ];
+
+/* artwork for every generated title, keyed by slug */
+for (const entry of allEntries) {
+  generatedArt[entry.slug] = {
+    poster: entry.posterPath
+      ? `${TMDB_IMG}${entry.posterPath}`
+      : `https://images.metahub.space/poster/medium/${entry.imdbId}/img`,
+    backdrop: entry.backdropPath
+      ? `${TMDB_BG}${entry.backdropPath}`
+      : entry.posterPath
+        ? `${TMDB_BG}${entry.posterPath}`
+        : `https://images.metahub.space/background/medium/${entry.imdbId}/img`,
+  };
+}
 
 export const generatedTitles: Title[] = allEntries.map((entry) => {
   const genres = entry.genres.filter((g): g is Genre => (allowed as string[]).includes(g));
