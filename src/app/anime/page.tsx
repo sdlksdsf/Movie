@@ -1,21 +1,19 @@
 import type { Metadata } from "next";
-import { BrowseGrid } from "@/components/browse-grid";
+import { LiveCatalogue } from "@/components/live-catalogue";
 import { LiveRows } from "@/components/live-rows";
-import { animeTitles } from "@/lib/catalog";
 
-export const metadata: Metadata = { title: "Anime — NOFLIX" };
+export const metadata: Metadata = {
+  title: "Anime — NOFLIX",
+  description: "1,000 anime series and films, subbed and dubbed, streamed from anime-native sources.",
+};
 
 export default function Page() {
   return (
     <>
-      <div className="px-0 pt-24">
+      <div className="px-0">
         <LiveRows variant="anime" />
       </div>
-      <BrowseGrid
-        titles={animeTitles()}
-        heading="Anime in the catalogue"
-        subheading="Subbed and dubbed series and films, streamed through the anime source route."
-      />
+      <LiveCatalogue fixedTab="anime" heading="1,000 anime" chrome={false} />
     </>
   );
 }

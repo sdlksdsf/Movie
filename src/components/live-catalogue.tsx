@@ -1,36 +1,100 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Navbar } from "@/components/navbar";
 import { Footer } from "@/components/footer";
 import { PlayIcon } from "@/components/icons";
-import {
-  MOVIE_GENRES,
-  SERIES_GENRES,
-  discoverPage,
-  type CatalogItem,
-  type Tab,
-} from "@/lib/discover";
+import { useStore } from "@/components/store";
 import { cn } from "@/lib/cn";
 
-const TABS: Array<{ id: Tab; label: string }> = [
-  { id: "movie", label: "Films" },
-  { id: "series", label: "Series" },
-  { id: "anime", label: "Anime" },
+type Tab = "movie" | "series" | "anime";
+
+type Entry = {
+  key: string;
+  tmdbId: number;
+  kind: "movie" | "series";
+  name: string;
+  year?: number;
+  rating?: number;
+  poster?: string;
+  genres: number[];
+  anime?: boolean;
+};
+
+const TABS: Array<{ id: Tab; label: string; noun: string }> = [
+  { id: "movie", label: "Films", noun: "films" },
+  { id: "series", label: "Series", noun: "series" },
+  { id: "anime", label: "Anime", noun: "anime" },
 ];
 
+const GENRES: Record<Tab, Array<{ id: number; name: string }>> = {
+  movie: [
+    { id: 28, name: "Action" },
+    { id: 12, name: "Adventure" },
+    { id: 16, name: "Animation" },
+    { id: 35, name: "Comedy" },
+    { id: 80, name: "Crime" },
+    { id: 99, name: "Documentary" },
+    { id: 18, name: "Drama" },
+    { id: 10751, name: "Family" },
+    { id: 14, name: "Fantasy" },
+    { id: 27, name: "Horror" },
+    { id: 9648, name: "Mystery" },
+    { id: 10749, name: "Romance" },
+    { id: 878, name: "Sci-Fi" },
+    { id: 53, name: "Thriller" },
+    { id: 37, name: "Western" },
+  ],
+  series: [
+    { id: 10759, name: "Action & Adventure" },
+    { id: 16, name: "Animation" },
+    { id: 35, name: "Comedy" },
+    { id: 80, name: "Crime" },
+    { id: 99, name: "Documentary" },
+    { id: 18, name: "Drama" },
+    { id: 10751, name: "Family" },
+    { id: 9648, name: "Mystery" },
+    { id: 10765, name: "Sci-Fi & Fantasy" },
+    { id: 10764, name: "Reality" },
+  ],
+  anime: [
+    { id: 10759, name: "Action" },
+    { id: 35, name: "Comedy" },
+    { id: 18, name: "Drama" },
+    { id: 14, name: "Fantasy" },
+    { id: 10765, name: "Sci-Fi" },
+    { id: 10749, name: "Romance" },
+  ],
+};
+
+const PAGE = 120;
+
 /**
- * The living catalogue: every film, series and anime TMDB knows about, paged in
- * as you scroll. Cards are plain <img> with lazy loading so a 1000-tile grid
- * stays smooth on a phone.
+ * The 1,000-title catalogue.
+ *
+ * One API route builds exactly 1,000 films, series and anime (popularity
+ * ordered, artwork complete). The grid walks that shelf 120 tiles at a time on
+ * an IntersectionObserver, so it feels instant and stays smooth on a phone no
+ * matter how far you scroll.
  */
-export function LiveCatalogue() {
+export function LiveCatalogue({
+  fixedTab,
+  heading = "The full catalogue",
+  chrome = true,
+}: {
+  fixedTab?: Tab;
+  heading?: string;
+  chrome?: boolean;
+} = {}) {
   const router = useRouter();
-  const [tab, setTab] = useState<Tab>("movie");
+  const { profile } = useStore();
+  const kids = Boolean(profile?.kids);
+
+  const [tab, setTab] = useState<Tab>(fixedTab ?? "movie");
   const [genreId, setGenreId] = useState<number | undefined>(undefined);
-  const [items, setItems] = useState<CatalogItem[]>([]);
-  const [page, setPage] = useState(1);
+  const [items, setItems] = useState<Entry[]>([]);
+  const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [done, setDone] = useState(false);
   const sentinel = useRef<HTMLDivElement>(null);
@@ -38,92 +102,118 @@ export function LiveCatalogue() {
   const run = useRef(0);
 
   const load = useCallback(
-    async (target: Tab, genre: number | undefined, nextPage: number) => {
+    async (target: Tab, genre: number | undefined, offset: number) => {
       if (busy.current) return;
       busy.current = true;
       const ticket = ++run.current;
       setLoading(true);
 
-      const results = await discoverPage({ tab: target, genreId: genre, page: nextPage, reset: nextPage === 1 });
-      if (ticket !== run.current) {
-        busy.current = false;
-        return;
-      }
+      try {
+        const params = new URLSearchParams({
+          tab: target,
+          offset: String(offset),
+          limit: String(PAGE),
+        });
+        if (genre) params.set("genre", String(genre));
+        if (kids) params.set("kids", "1");
 
-      setItems((current) => (nextPage === 1 ? results : [...current, ...results]));
-      setPage(nextPage);
-      setDone(results.length === 0);
-      setLoading(false);
-      busy.current = false;
+        const res = await fetch(`/api/catalogue?${params.toString()}`);
+        const data = (await res.json()) as {
+          results?: Entry[];
+          total?: number;
+          count?: number;
+        };
+        if (ticket !== run.current) return;
+
+        const fresh = data.results ?? [];
+        setTotal(data.total ?? 0);
+        setItems((current) => (offset === 0 ? fresh : [...current, ...fresh]));
+        setDone(fresh.length === 0 || offset + fresh.length >= (data.total ?? 0));
+      } catch {
+        if (ticket === run.current) setDone(true);
+      } finally {
+        if (ticket === run.current) {
+          setLoading(false);
+          busy.current = false;
+        }
+      }
     },
-    [],
+    [kids],
   );
 
   /* start over whenever the filter changes */
   useEffect(() => {
     setItems([]);
-    setPage(1);
+    setTotal(0);
     setDone(false);
-    void load(tab, genreId, 1);
+    busy.current = false;
+    void load(tab, genreId, 0);
   }, [tab, genreId, load]);
 
-  /* infinite scroll */
+  /* walk the shelf as you scroll */
   useEffect(() => {
     const node = sentinel.current;
     if (!node || done) return;
     const observer = new IntersectionObserver(
       (entries) => {
-        if (entries[0]?.isIntersecting && !busy.current && !done) {
-          void load(tab, genreId, page + 1);
+        if (entries[0]?.isIntersecting && !busy.current) {
+          void load(tab, genreId, items.length);
         }
       },
-      { rootMargin: "900px 0px" },
+      { rootMargin: "800px 0px" },
     );
     observer.observe(node);
     return () => observer.disconnect();
-  }, [tab, genreId, page, done, load]);
+  }, [items.length, done, tab, genreId, load]);
 
-  const genres = tab === "movie" ? MOVIE_GENRES : tab === "series" ? SERIES_GENRES : [];
+  const genres = useMemo(() => GENRES[tab], [tab]);
+  const activeTab = TABS.find((entry) => entry.id === tab) ?? TABS[0];
+  const progress = total > 0 ? Math.round((items.length / total) * 100) : 0;
 
   return (
     <>
-      <Navbar />
-      <main className="min-h-screen pb-16 pt-24 md:pt-28">
+      {chrome && <Navbar />}
+      <main className={cn("min-h-screen pb-16", chrome && "pt-24 md:pt-28")}>
         <div className="mx-auto max-w-[1500px] px-4 md:px-12">
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
               <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-[var(--nf-accent)]">
-                Browse
+                {kids ? "Kid-safe shelf" : "Browse"}
               </p>
               <h1 className="mt-1 font-display text-[clamp(1.6rem,4vw,2.6rem)] leading-none text-white">
-                The full catalogue
+                {heading}
               </h1>
-              <p className="mt-2 text-[12.5px] text-white/50">
-                Thousands of films, series and anime — {items.length.toLocaleString()} loaded so far, more as you scroll.
+              <p className="mt-2 max-w-[60ch] text-[12.5px] text-white/50">
+                {total > 0
+                  ? `${total.toLocaleString()} ${activeTab.noun} ready to stream — ${items.length.toLocaleString()} loaded${genreId ? " after filtering" : ""}. More tiles appear as you scroll.`
+                  : kids
+                    ? "Loading the kid-safe shelf — family, animation and comedy only."
+                    : "Loading the shelf — films, series and anime, popularity ordered."}
               </p>
             </div>
-          </div>
 
-          {/* tabs */}
-          <div className="mt-5 flex gap-2">
-            {TABS.map((entry) => (
-              <button
-                key={entry.id}
-                type="button"
-                onClick={() => {
-                  setGenreId(undefined);
-                  setTab(entry.id);
-                }}
-                className={cn(
-                  "rounded-full px-4 py-1.5 text-[13px] font-semibold transition",
-                  tab === entry.id
-                    ? "bg-white text-black"
-                    : "bg-white/10 text-white/75 hover:bg-white/20 hover:text-white",
-                )}
-              >
-                {entry.label}
-              </button>
-            ))}
+            {!fixedTab && (
+              <div className="flex gap-2">
+                {TABS.map((entry) => (
+                  <button
+                    key={entry.id}
+                    type="button"
+                    onClick={() => {
+                      setGenreId(undefined);
+                      setTab(entry.id);
+                    }}
+                    className={cn(
+                      "rounded-full px-4 py-1.5 text-[13px] font-semibold transition",
+                      tab === entry.id
+                        ? "bg-white text-black"
+                        : "bg-white/10 text-white/75 hover:bg-white/20 hover:text-white",
+                    )}
+                  >
+                    {entry.label}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* genre chips */}
@@ -144,7 +234,16 @@ export function LiveCatalogue() {
             </div>
           )}
 
-          {/* grid */}
+          {/* progress rail — honest, tiny, never blocks the grid */}
+          {total > 0 && (
+            <div className="mt-4 h-[2px] w-full overflow-hidden rounded-full bg-white/10">
+              <div
+                className="h-full bg-[var(--nf-accent)] transition-[width] duration-500"
+                style={{ width: `${Math.max(progress, 2)}%` }}
+              />
+            </div>
+          )}
+
           <div className="mt-5 grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-5 md:gap-3 lg:grid-cols-6 xl:grid-cols-7">
             {items.map((item) => (
               <button
@@ -191,7 +290,9 @@ export function LiveCatalogue() {
                     {item.name}
                   </span>
                   <span className="mt-0.5 flex items-center gap-1 text-[9.5px] text-white/45">
-                    {item.rating ? <span className="font-semibold text-[#46d369]">{item.rating}</span> : null}
+                    {item.rating ? (
+                      <span className="font-semibold text-[#46d369]">{item.rating}</span>
+                    ) : null}
                     {item.year ? <span>· {item.year}</span> : null}
                   </span>
                 </span>
@@ -211,12 +312,39 @@ export function LiveCatalogue() {
 
           {done && items.length > 0 && (
             <p className="pb-6 text-center text-[12px] text-white/35">
-              That&apos;s the end of this shelf — try another filter.
+              That&apos;s the whole shelf — {items.length.toLocaleString()} {activeTab.noun}.
             </p>
+          )}
+          {done && items.length === 0 && !loading && (
+            <div className="pb-8 text-center">
+              <p className="text-[13px] text-white/55">
+                The live shelf couldn&apos;t be reached just now — the curated catalogue is still
+                here.
+              </p>
+              <div className="mt-3 flex flex-wrap justify-center gap-2">
+                <a
+                  href="/new-popular"
+                  className="rounded-full bg-white px-4 py-1.5 text-[12.5px] font-semibold text-black transition hover:bg-white/85"
+                >
+                  Browse the curated catalogue
+                </a>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDone(false);
+                    setLoading(true);
+                    void load(tab, genreId, 0);
+                  }}
+                  className="rounded-full bg-white/10 px-4 py-1.5 text-[12.5px] font-semibold text-white/85 transition hover:bg-white/20"
+                >
+                  Try again
+                </button>
+              </div>
+            </div>
           )}
         </div>
       </main>
-      <Footer />
+      {chrome && <Footer />}
     </>
   );
 }
