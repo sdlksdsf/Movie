@@ -492,6 +492,35 @@ function PlaybackPanel() {
         </div>
       </Panel>
 
+      <Panel
+        title="Anime audio"
+        hint="VidNest, AniEmbed and CineLite's anime route all follow this."
+      >
+        <div className="grid grid-cols-2 gap-2">
+          {(
+            [
+              { id: "sub", label: "Subbed", hint: "Japanese audio, subtitles" },
+              { id: "dub", label: "Dubbed", hint: "English audio track" },
+            ] as const
+          ).map((option) => (
+            <button
+              key={option.id}
+              type="button"
+              onClick={() => updateSettings({ animeAudio: option.id })}
+              className={cn(
+                "rounded-lg border px-3 py-3 text-left transition",
+                settings.animeAudio === option.id
+                  ? "border-white bg-white/[0.08]"
+                  : "border-white/12 hover:border-white/35",
+              )}
+            >
+              <span className="block text-[13px] text-white">{option.label}</span>
+              <span className="block text-[11px] text-white/40">{option.hint}</span>
+            </button>
+          ))}
+        </div>
+      </Panel>
+
       <Panel title="Playback behaviour">
         <ToggleRow
           title="Autoplay next episode"

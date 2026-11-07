@@ -1,15 +1,22 @@
 import type { Title } from "@/lib/types";
 
 /**
- * Stream sources, in failover order.
+ * Stream sources.
  *
- * frameXTV starts fastest and is the default; CineLite is the feature-rich
- * backup (4K, subtitles, anime ids); RiveStream is the last resort that keeps
- * the site playable when the first two are down. The player walks this list
- * automatically when a source stops responding.
+ * Movies and series ride the TMDB-id servers; anime has its own, because the
+ * TMDB-id servers either refuse anime or serve the wrong episode numbering.
+ * Anime servers speak AniList ids, which `anime-ids.ts` resolves when a title
+ * only knows its name.
+ *
+ *   Films & series    frameXTV → CineLite → RiveStream → VidNest
+ *   Anime             VidNest → AniEmbed → CineLite → frameXTV → RiveStream
+ *
+ * The player walks the chain automatically when a server stops responding.
  */
 
-export type PlayerId = "framex" | "cinelite" | "rivestream";
+export type PlayerId = "framex" | "cinelite" | "rivestream" | "vidnest" | "aniembed";
+
+export type AudioTrack = "sub" | "dub";
 
 export type PlayerDef = {
   id: PlayerId;
@@ -18,8 +25,10 @@ export type PlayerDef = {
   hint: string;
   host: string;
   badge?: string;
-  /** order in the failover chain */
+  /** ordering hint inside each chain */
   rank: number;
+  /** true for the anime-native servers */
+  animeOnly?: boolean;
 };
 
 export const DEFAULT_PLAYER: PlayerId = "framex";
@@ -29,10 +38,29 @@ export const PLAYERS: PlayerDef[] = [
     id: "framex",
     label: "frameXTV",
     short: "XTV",
-    hint: "Primary · fastest start",
+    hint: "Primary for films & series · fastest start",
     host: "https://framextv.cc",
     badge: "Default",
     rank: 0,
+  },
+  {
+    id: "vidnest",
+    label: "VidNest",
+    short: "Nest",
+    hint: "Anime specialist · 1080p, sub & dub",
+    host: "https://vidnest.fun",
+    badge: "Anime",
+    rank: 1,
+    animeOnly: true,
+  },
+  {
+    id: "aniembed",
+    label: "AniEmbed",
+    short: "Ani",
+    hint: "Anime backup · skip intro & ending",
+    host: "https://aniembed.se",
+    rank: 2,
+    animeOnly: true,
   },
   {
     id: "cinelite",
@@ -40,15 +68,15 @@ export const PLAYERS: PlayerDef[] = [
     short: "Lite",
     hint: "Backup · 4K + subtitles",
     host: "https://embed.cinelite.xyz",
-    rank: 1,
+    rank: 3,
   },
   {
     id: "rivestream",
     label: "RiveStream",
     short: "Rive",
-    hint: "Fallback · if both are down",
+    hint: "Fallback · if the others are down",
     host: "https://rivestream.ru",
-    rank: 2,
+    rank: 4,
   },
 ];
 
@@ -59,14 +87,30 @@ export const DEFAULT_QUALITY: Quality = "1080p";
 const ACCENT = "e50914";
 
 export function isPlayerId(value: unknown): value is PlayerId {
-  return value === "framex" || value === "cinelite" || value === "rivestream";
+  return PLAYERS.some((player) => player.id === value);
 }
 
 export function playerMeta(id: PlayerId): PlayerDef {
   return PLAYERS.find((p) => p.id === id) ?? PLAYERS[0];
 }
 
-/** Every other source, in failover order. */
+/** Is this an anime title (so it should start on an anime server)? */
+export function isAnimeTitle(title: Title) {
+  return Boolean(title.anime || title.anilistId);
+}
+
+/**
+ * The failover chain for a title, best first.
+ * Anime never starts on a TMDB-id server: they either 404 or give the wrong
+ * episode, which is exactly the bug this ordering fixes.
+ */
+export function playOrder(title: Title): PlayerId[] {
+  return isAnimeTitle(title)
+    ? ["vidnest", "aniembed", "cinelite", "framex", "rivestream"]
+    : ["framex", "cinelite", "rivestream", "vidnest", "aniembed"];
+}
+
+/** Every other server, in chain order. */
 export function otherPlayers(id: PlayerId): PlayerId[] {
   return PLAYERS.filter((p) => p.id !== id)
     .sort((a, b) => a.rank - b.rank)
@@ -84,20 +128,26 @@ export function nextServer(id: PlayerId): PlayerId {
   return sorted[(index + 1) % sorted.length];
 }
 
-/** Every server needs a TMDB id; CineLite can also play AniList-only anime. */
-export function canPlay(id: PlayerId, title: Title): boolean {
-  if (id === "cinelite") return Boolean(title.tmdbId || title.anilistId);
+/**
+ * Can this server play this title? `anilistId` is the id resolved at runtime
+ * for anime that only knew their name.
+ */
+export function canPlay(id: PlayerId, title: Title, anilistId?: number | null): boolean {
+  const ani = anilistId ?? title.anilistId ?? 0;
+  if (id === "aniembed") return Boolean(ani);
+  if (id === "vidnest" || id === "cinelite") return Boolean(ani || title.tmdbId);
   return Boolean(title.tmdbId);
 }
 
 /** The source we can actually use right now, preferring the requested one. */
-export function resolvePlayer(preferred: PlayerId, title: Title): PlayerId {
-  if (canPlay(preferred, title)) return preferred;
-  const fallback = PLAYERS.filter((p) => p.id !== preferred)
-    .sort((a, b) => a.rank - b.rank)
-    .map((p) => p.id)
-    .find((id) => canPlay(id, title));
-  return fallback ?? preferred;
+export function resolvePlayer(
+  preferred: PlayerId,
+  title: Title,
+  anilistId?: number | null,
+): PlayerId {
+  if (canPlay(preferred, title, anilistId)) return preferred;
+  const order = playOrder(title);
+  return order.find((id) => id !== preferred && canPlay(id, title, anilistId)) ?? preferred;
 }
 
 export function buildSrc(o: {
@@ -107,12 +157,38 @@ export function buildSrc(o: {
   episode: number;
   quality: Quality;
   resumeAt?: number | null;
+  /** resolved AniList id for anime that arrived without one */
+  anilistId?: number | null;
+  /** sub or dub preference for the anime servers */
+  audio?: AudioTrack;
 }): string {
-  const { player, title, season, episode, quality, resumeAt } = o;
+  const { player, title, season, episode, quality, resumeAt, audio = "sub" } = o;
   const resume = resumeAt && resumeAt > 20 ? Math.floor(resumeAt) : null;
+  const ani = o.anilistId ?? title.anilistId ?? 0;
+  const anime = isAnimeTitle(title);
+
+  if (player === "vidnest") {
+    // https://vidnest.fun/anime/{anilistId}/{episode}/{sub|dub}
+    // https://vidnest.fun/tv/{tmdbId}/{season}/{episode} · /movie/{tmdbId}
+    if (anime && ani) {
+      const base = `https://vidnest.fun/anime/${ani}/${Math.max(1, episode)}/${audio}`;
+      return resume ? `${base}?t=${resume}` : base;
+    }
+    if (title.kind === "series") {
+      return `https://vidnest.fun/tv/${title.tmdbId}/${season}/${episode}`;
+    }
+    return `https://vidnest.fun/movie/${title.tmdbId}`;
+  }
+
+  if (player === "aniembed") {
+    // https://aniembed.se/e/{anilistId}/{episode}?lang=sub|dub
+    const params = new URLSearchParams({ lang: audio, autoplay: "1" });
+    if (resume) params.set("t", String(resume));
+    return `https://aniembed.se/e/${ani}/${Math.max(1, episode)}?${params.toString()}`;
+  }
 
   if (player === "framex") {
-    // /embed/{tmdbId} for films · /embed/{tmdbId}/{s}/{e} for series + anime
+    // /embed/{tmdbId} for films · /embed/{tmdbId}/{s}/{e} for series
     const base =
       title.kind === "series"
         ? `https://framextv.cc/embed/${title.tmdbId}/${season}/${episode}`
@@ -140,11 +216,12 @@ export function buildSrc(o: {
     return `https://rivestream.ru/embed?${params.toString()}`;
   }
 
-  const base = title.anilistId
-    ? `https://embed.cinelite.xyz/anime/${title.anilistId}/${episode}`
-    : title.kind === "series"
-      ? `https://embed.cinelite.xyz/tv/${title.tmdbId}/${season}/${episode}`
-      : `https://embed.cinelite.xyz/${title.tmdbId}`;
+  const base =
+    anime && ani
+      ? `https://embed.cinelite.xyz/anime/${ani}/${episode}`
+      : title.kind === "series"
+        ? `https://embed.cinelite.xyz/tv/${title.tmdbId}/${season}/${episode}`
+        : `https://embed.cinelite.xyz/${title.tmdbId}`;
 
   const params = new URLSearchParams();
   params.set("color", ACCENT);

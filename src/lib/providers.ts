@@ -15,6 +15,10 @@ export type ExternalTitle = {
   source: "tmdb" | "tvmaze" | "jikan" | "imdb";
   /** TMDB id when we know it — this is what the CineLite player needs. */
   tmdbId?: number;
+  /** anime results carry their own ids so they reach an anime server */
+  anime?: boolean;
+  anilistId?: number;
+  malId?: number;
   name: string;
   year?: number;
   kind: "movie" | "series";
@@ -171,6 +175,7 @@ async function tvmazeSearch(query: string): Promise<ExternalTitle[]> {
 async function jikanSearch(query: string): Promise<ExternalTitle[]> {
   const data = await getJson<{
     data: Array<{
+      mal_id?: number;
       title: string;
       year?: number;
       synopsis?: string;
@@ -183,6 +188,8 @@ async function jikanSearch(query: string): Promise<ExternalTitle[]> {
   if (!data?.data) return [];
   return data.data.map((a) => ({
     source: "jikan" as const,
+    anime: true,
+    malId: a.mal_id,
     name: a.title,
     year: a.year,
     kind: "series" as const,

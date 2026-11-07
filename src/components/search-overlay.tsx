@@ -7,6 +7,7 @@ import { CloseIcon, SearchIcon } from "@/components/icons";
 import { useStore } from "@/components/store";
 import { Artwork } from "@/components/artwork";
 import { allTitles, genres, genreSlug, searchTitles, shortMeta, visibleFor } from "@/lib/catalog";
+import { playHref } from "@/lib/live";
 
 const genreColors = [
   "#e50914",
@@ -27,7 +28,17 @@ export function SearchOverlay() {
   const { searchOpen, setSearchOpen, openTitle, profile } = useStore();
   const [query, setQuery] = useState("");
   const [live, setLive] = useState<
-    Array<{ name: string; year?: number; kind: string; poster?: string; source: string; tmdbId?: number }>
+    Array<{
+      name: string;
+      year?: number;
+      kind: "movie" | "series";
+      poster?: string;
+      source: string;
+      tmdbId?: number;
+      anilistId?: number;
+      malId?: number;
+      anime?: boolean;
+    }>
   >([]);
   const [liveLoading, setLiveLoading] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -207,9 +218,9 @@ export function SearchOverlay() {
                     </div>
                     <div className="grid grid-cols-3 gap-2.5 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6">
                       {live.map((item, i) => {
-                        const href = item.tmdbId
-                          ? `/play/${item.tmdbId}?title=${encodeURIComponent(item.name)}&kind=${item.kind}&year=${item.year ?? ""}`
-                          : undefined;
+                        /* anime results must keep their anime route so they land on
+                           an anime server rather than a TMDB-id embed */
+                        const href = playHref(item) ?? undefined;
                         const inner = (
                           <>
                             <span className="relative block aspect-[2/3] w-full overflow-hidden rounded-[4px] bg-[#222] ring-1 ring-white/5 transition duration-300 group-hover:ring-white/40">

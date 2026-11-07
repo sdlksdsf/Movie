@@ -1,7 +1,8 @@
 # NOFLIX
 
 **A Netflix-style streaming front-end for the open web.** Thousands of films, series and anime;
-customisable profiles with real kids restrictions; three stream servers with automatic failover;
+customisable profiles with real kids restrictions; five stream servers with automatic failover
+(including two anime-native sources);
 and a settings screen that actually changes the product.
 
 [![Live demo](https://img.shields.io/badge/live-noflix--taupe.vercel.app-e50914?style=for-the-badge)](https://noflix-taupe.vercel.app)
@@ -77,21 +78,28 @@ Profiles are stored per device and are fully customisable:
 Playback is delegated to third-party embeds. NOFLIX walks the list automatically when a server
 does not respond, so a dead provider never leaves you on a black screen:
 
+Films and series resolve against TMDB ids, anime resolves against AniList ids, so every title
+starts on a server that actually knows it:
+
 ```
-frameXTV  →  CineLite  →  RiveStream
-(default)    (4K, subs)   (last resort)
+Films & series:  frameXTV (default) → CineLite (4K, subs) → RiveStream (last resort)
+                 → VidNest → AniEmbed
+
+Anime:           VidNest (sub/dub) → AniEmbed (sub/dub) → CineLite → frameXTV → RiveStream
 ```
 
-Each server can be selected manually in the player menu or set as the default in **Settings →
-Playback**. If a title has no source on the chosen server, the next one is picked automatically.
+Anime titles are matched to their AniList id from the catalogue, the AniList GraphQL API, or the
+AniList relational id map (ARM), then played with the chosen audio track (sub or dub). Each server can be
+selected manually in the player menu or set as the default in **Settings → Playback**. If a title
+has no source on the chosen server, the next one is picked automatically.
 
 ## Settings
 
-`/settings` ships six panels:
+`/settings` ships seven panels:
 
 1. **Profiles** — edit name, character, colour, maturity, autoplay; switch or delete profiles.
 2. **Appearance** — accent colour (live), card density, reduce motion, hover previews, data saver.
-3. **Playback** — default server, quality, language, autoplay next episode.
+3. **Playback** — default server, quality, language, anime audio (sub/dub), autoplay next episode.
 4. **Privacy & data** — mature-title filter, export your data as JSON, delete everything.
 5. **Developer** — service health with latency, repository stats, build and runtime info.
 6. **About & legal** — links to the About, Privacy, Terms and DMCA pages.

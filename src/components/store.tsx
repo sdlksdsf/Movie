@@ -42,6 +42,8 @@ export type Settings = {
   autoplayNext: boolean;
   language: string;
   hideMature: boolean;
+  /** anime servers play subbed or dubbed */
+  animeAudio: "sub" | "dub";
 };
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -56,6 +58,7 @@ export const DEFAULT_SETTINGS: Settings = {
   autoplayNext: true,
   language: "English",
   hideMature: false,
+  animeAudio: "sub",
 };
 
 export type WatchProgress = {
