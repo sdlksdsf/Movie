@@ -11,10 +11,10 @@ import {
   PlayIcon,
   PlusIcon,
   ThumbUpIcon,
-  VolumeIcon,
 } from "@/components/icons";
 import { useStore } from "@/components/store";
 import { PosterTile } from "@/components/row";
+import { TrailerStage, useTrailerKey } from "@/components/trailer";
 import {
   formatRuntime,
   getTitle,
@@ -49,6 +49,8 @@ function ModalBody({
   const seasons = useMemo(() => seasonsFor(title), [title]);
   const similar = useMemo(() => similarTo(title, 9), [title]);
   const saved = inList(title.slug);
+  /* Netflix-style: the trailer starts on its own a beat after the card opens */
+  const trailerId = useTrailerKey(title.tmdbId, title.kind, 650);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -96,8 +98,12 @@ function ModalBody({
           <div className="absolute inset-0 scale-110 opacity-60 blur-[2px]">
             <Artwork slug={title.slug} name={title.name} kind="backdrop" accent={title.accent} priority sizes="900px" />
           </div>
+          {trailerId && <TrailerStage videoId={trailerId} />}
           <div className="absolute inset-0">
-            <div className="absolute inset-0" style={{ background: `linear-gradient(120deg, ${title.accent}33, transparent 65%)` }} />
+            <div
+              className="absolute inset-0"
+              style={{ background: `linear-gradient(120deg, ${title.accent}22, transparent 65%)` }}
+            />
           </div>
           <div className="absolute inset-0 bg-gradient-to-t from-[#181818] via-[#181818]/30 to-transparent" />
           <div className="absolute inset-0 bg-gradient-to-r from-[#181818]/90 via-transparent to-transparent" />
@@ -148,14 +154,7 @@ function ModalBody({
               >
                 <ThumbUpIcon width={18} height={18} />
               </button>
-              <button
-                type="button"
-                aria-label="Mute"
-                onClick={() => toast("Audio is controlled inside the player")}
-                className="focus-brand ml-auto grid h-10 w-10 place-items-center rounded-full border-2 border-white/50 text-white transition hover:border-white"
-              >
-                <VolumeIcon width={18} height={18} />
-              </button>
+
             </div>
           </div>
         </div>

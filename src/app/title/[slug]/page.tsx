@@ -6,6 +6,7 @@ import { Footer } from "@/components/footer";
 import { Navbar } from "@/components/navbar";
 import { PosterTile } from "@/components/row";
 import { PlayIcon } from "@/components/icons";
+import { HeroTrailer } from "@/components/trailer";
 import {
   allTitles,
   formatRuntime,
@@ -48,6 +49,7 @@ export default async function TitlePage({ params }: { params: Promise<{ slug: st
           <div className="absolute inset-0">
             <Artwork slug={title.slug} name={title.name} kind="backdrop" accent={title.accent} priority sizes="100vw" />
           </div>
+          {title.tmdbId ? <HeroTrailer tmdbId={title.tmdbId} kind={title.kind} /> : null}
           <div className="absolute inset-0 bg-gradient-to-t from-[#141414] via-[#141414]/50 to-[#141414]/30" />
           <div className="absolute inset-0 bg-gradient-to-r from-[#141414] via-transparent to-transparent" />
 
