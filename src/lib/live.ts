@@ -141,7 +141,7 @@ export async function tmdbShelves(): Promise<Shelf[]> {
   const key = getKey() || process.env.NEXT_PUBLIC_TMDB_KEY || "";
   if (!key) return [];
 
-  const [trending, movies, series, anime, topRated] = await Promise.all([
+  const [trending, movies, series, anime, topRated, animeFilms, anime2] = await Promise.all([
     tmdbFetch<{ results?: TmdbItem[] }>("/trending/all/week", { page: "1" }, key),
     tmdbFetch<{ results?: TmdbItem[] }>("/movie/popular", { page: "1" }, key),
     tmdbFetch<{ results?: TmdbItem[] }>("/tv/popular", { page: "1" }, key),
@@ -151,6 +151,16 @@ export async function tmdbShelves(): Promise<Shelf[]> {
       key,
     ),
     tmdbFetch<{ results?: TmdbItem[] }>("/movie/top_rated", { page: "1" }, key),
+    tmdbFetch<{ results?: TmdbItem[] }>(
+      "/discover/movie",
+      { with_genres: "16", with_original_language: "ja", sort_by: "popularity.desc", page: "1" },
+      key,
+    ),
+    tmdbFetch<{ results?: TmdbItem[] }>(
+      "/discover/tv",
+      { with_genres: "16", with_original_language: "ja", sort_by: "trending.desc".replace("trending", "vote_count"), page: "2" },
+      key,
+    ),
   ]);
 
   const shelves: Shelf[] = [
@@ -166,7 +176,16 @@ export async function tmdbShelves(): Promise<Shelf[]> {
       id: "live-anime",
       title: "Trending Anime",
       hint: "Japanese animation, freshly ranked",
-      items: (anime?.results ?? []).map((i) => mapTmdb(i, "series", true)),
+      items: [
+        ...(anime?.results ?? []).map((i) => mapTmdb(i, "series", true)),
+        ...(anime2?.results ?? []).map((i) => mapTmdb(i, "series", true)),
+      ],
+    },
+    {
+      id: "live-anime-films",
+      title: "Anime Films",
+      hint: "Feature-length animation",
+      items: (animeFilms?.results ?? []).map((i) => mapTmdb(i, "movie", true)),
     },
     { id: "live-top-rated", title: "All-Time Top Rated", items: (topRated?.results ?? []).map((i) => mapTmdb(i, "movie")) },
   ];

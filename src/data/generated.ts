@@ -1,15 +1,16 @@
 import type { Genre, Title } from "@/lib/types";
 import entries from "./catalog.generated.json";
+import animeEntries from "./anime.generated.json";
 
 /**
- * Titles that came out of the metadata pipeline (`scripts/sync-catalog.mjs`)
- * instead of being written by hand. Every record carries a verified TMDB id and
- * an IMDb id, so both the player and the artwork resolve without guessing.
+ * Titles produced by the metadata pipeline rather than written by hand.
+ * `catalog.generated.json` comes from scripts/sync-catalog.mjs (Cinemeta),
+ * `anime.generated.json` from TMDB's Japanese-animation discovery endpoints.
  */
 type Entry = {
   slug: string;
   tmdbId: number;
-  imdbId: string;
+  imdbId?: string;
   anilistId?: number;
   kind: "movie" | "series";
   name: string;
@@ -19,11 +20,14 @@ type Entry = {
   genres: string[];
   rating: number;
   overview: string;
-  creator: string;
-  cast: string[];
+  creator?: string;
+  cast?: string[];
   badge?: string;
   featured?: boolean;
   original?: boolean;
+  anime?: boolean;
+  posterPath?: string;
+  backdropPath?: string;
 };
 
 const allowed: Genre[] = [
@@ -71,25 +75,41 @@ function maturityFor(entry: Entry) {
   return "16+";
 }
 
-/** Poster art straight from IMDb's image CDN, resolved through the Metahub cache. */
+const TMDB_IMG = "https://image.tmdb.org/t/p/w500";
+const TMDB_BG = "https://image.tmdb.org/t/p/w780";
+
+/** Artwork: TMDB paths when we have them, otherwise the IMDb CDN by id. */
 export const generatedArt: Record<string, { poster: string; backdrop: string }> = Object.fromEntries(
   (entries as Entry[]).map((e) => [
     e.slug,
     {
-      poster: `https://images.metahub.space/poster/medium/${e.imdbId}/img`,
-      backdrop: `https://images.metahub.space/background/medium/${e.imdbId}/img`,
+      poster: e.posterPath
+        ? `${TMDB_IMG}${e.posterPath}`
+        : `https://images.metahub.space/poster/medium/${e.imdbId}/img`,
+      backdrop: e.backdropPath
+        ? `${TMDB_BG}${e.backdropPath}`
+        : `https://images.metahub.space/background/medium/${e.imdbId}/img`,
     },
   ]),
 );
 
-export const generatedTitles: Title[] = (entries as Entry[]).map((entry) => {
+const allEntries: Entry[] = [
+  ...(entries as Entry[]),
+  ...(animeEntries as Entry[]).map((entry) => ({ ...entry, anime: true })),
+];
+
+export const generatedTitles: Title[] = allEntries.map((entry) => {
   const genres = entry.genres.filter((g): g is Genre => (allowed as string[]).includes(g));
   const seasonCount = entry.kind === "series" ? (entry.seasons ?? 1) : undefined;
+  const isAnime =
+    Boolean(entry.anime) ||
+    Boolean(entry.anilistId) ||
+    (entry.genres.includes("Animation") && entry.kind === "series");
   return {
     slug: entry.slug,
     tmdbId: entry.tmdbId,
     anilistId: entry.anilistId,
-    anime: Boolean(entry.anilistId) || (entry.genres.includes("Animation") && entry.kind === "series"),
+    anime: isAnime,
     kind: entry.kind,
     name: entry.name,
     year: entry.year,
@@ -101,8 +121,8 @@ export const generatedTitles: Title[] = (entries as Entry[]).map((entry) => {
     match: Math.min(99, Math.round(entry.rating * 10) + 4),
     tagline: entry.kind === "series" ? "Stream the whole story." : "Now streaming.",
     overview: entry.overview,
-    creator: entry.creator,
-    cast: entry.cast,
+    creator: entry.creator ?? (isAnime ? "Japanese animation" : "NOFLIX"),
+    cast: entry.cast ?? [],
     badge: entry.badge,
     accent: accents[hash(entry.slug) % accents.length],
     featured: entry.featured,
