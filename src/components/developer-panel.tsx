@@ -23,6 +23,8 @@ const initial: Check[] = [
   { id: "tmdb", label: "TMDB API", detail: "Catalogue, artwork, trailers", status: "idle" },
   { id: "images", label: "TMDB image CDN", detail: "image.tmdb.org posters", status: "idle" },
   { id: "framex", label: "frameXTV", detail: "Primary stream server", status: "idle" },
+  { id: "vidfast", label: "VidFast", detail: "Backup · 4K + sources", status: "idle" },
+  { id: "vidlink", label: "VidLink", detail: "Backup · 1080p + subtitles", status: "idle" },
   { id: "cinelite", label: "CineLite", detail: "Backup stream server", status: "idle" },
   { id: "rivestream", label: "RiveStream", detail: "Fallback stream server", status: "idle" },
   { id: "vidnest", label: "VidNest", detail: "Anime · sub & dub", status: "idle" },
@@ -108,6 +110,8 @@ export function DeveloperPanel() {
 
     for (const [id, url] of [
       ["framex", "https://framextv.cc/"],
+      ["vidfast", "https://vidfast.pro/"],
+      ["vidlink", "https://vidlink.pro/"],
       ["cinelite", "https://embed.cinelite.xyz/"],
       ["rivestream", "https://rivestream.ru/"],
       ["vidnest", "https://vidnest.fun/"],

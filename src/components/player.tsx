@@ -273,16 +273,36 @@ export function Player({
 
   /* ---------------------------------------------------------------- source */
 
-  /** Walk the server chain: frameXTV → CineLite → RiveStream, each at most once. */
+  /**
+   * Walk this title's chain: each server at most once, and only when a frame
+   * genuinely fails to load. Playback telemetry is not a liveness signal —
+   * most embeds never postMessage, so treating "no data" as failure used to
+   * bounce a perfectly good stream through every provider in the list.
+   */
   const hardFallback = useCallback(() => {
     const candidate = playOrder(title).find(
       (id) => id !== player && canPlay(id, title, anilistId) && !tried.current.has(id),
     );
-    if (!candidate) return;
+    if (!candidate) return false;
     tried.current.add(player);
     fallbackUsed.current = true;
     setPlayer(candidate);
     toast(`${playerMeta(player).label} didn't respond — trying ${playerMeta(candidate).label}`);
+    return true;
+  }, [player, title, toast, anilistId]);
+
+  /** Manual "next server": ignores the tried set so it always does something. */
+  const cycleServer = useCallback(() => {
+    const chain = playOrder(title).filter((id) => canPlay(id, title, anilistId));
+    if (chain.length < 2) {
+      toast("This is the only source for this title");
+      return;
+    }
+    const next = chain[(chain.indexOf(player) + 1) % chain.length];
+    tried.current.clear();
+    setPlayer(next);
+    setMenu(false);
+    toast(`Playing from ${playerMeta(next).label}`);
   }, [player, title, toast, anilistId]);
 
   /* per-source reset: cheap, so switching feels instant */
@@ -299,35 +319,13 @@ export function Player({
     stillHits.current = 0;
     clearPauseTimer();
 
+    /* a frame that never even loads is the only failure we can see across
+       origins — give embeds a generous 18s before moving on by ourselves */
     const slow = window.setTimeout(() => {
       if (!loadedRef.current) hardFallback();
-    }, 9000);
+    }, 18000);
     return () => window.clearTimeout(slow);
   }, [src, hardFallback]);
-
-  /* if the frame loads but nothing ever starts, offer a one-tap start …
-     and if that source still refuses to play, hop to the backup by itself */
-  useEffect(() => {
-    if (!loaded) return;
-    if (nudgeTimer.current) window.clearTimeout(nudgeTimer.current);
-    if (nudgeHide.current) window.clearTimeout(nudgeHide.current);
-
-    nudgeTimer.current = window.setTimeout(() => {
-      if (playingRef.current) return;
-      setNudge(true);
-      nudgeHide.current = window.setTimeout(() => setNudge(false), 20000);
-    }, 3200);
-
-    const hop = window.setTimeout(() => {
-      if (!playingRef.current) hardFallback();
-    }, 10000);
-
-    return () => {
-      if (nudgeTimer.current) window.clearTimeout(nudgeTimer.current);
-      if (nudgeHide.current) window.clearTimeout(nudgeHide.current);
-      window.clearTimeout(hop);
-    };
-  }, [loaded, src, hardFallback]);
 
   /* ------------------------------------------------------------- telemetry */
 
@@ -473,7 +471,7 @@ export function Player({
 
   /* --------------------------------------------------------------- actions */
 
-  const canPlayNow = (id: PlayerId) => resolvePlayer(id, title) === id;
+  const canPlayNow = (id: PlayerId) => resolvePlayer(id, title, anilistId) === id;
 
   const changePlayer = (next: PlayerId) => {
     if (!canPlayNow(next)) {
@@ -510,6 +508,10 @@ export function Player({
       <link rel="dns-prefetch" href="https://framextv.cc" />
       <link rel="preconnect" href="https://embed.cinelite.xyz" crossOrigin="" />
       <link rel="dns-prefetch" href="https://embed.cinelite.xyz" />
+      <link rel="preconnect" href="https://vidfast.pro" crossOrigin="" />
+      <link rel="dns-prefetch" href="https://vidfast.pro" />
+      <link rel="preconnect" href="https://vidlink.pro" crossOrigin="" />
+      <link rel="dns-prefetch" href="https://vidlink.pro" />
 
       {/* poster behind the frame: never a black flash while it boots */}
       <div className="absolute inset-0">
@@ -679,6 +681,31 @@ export function Player({
                 );
               })}
 
+              <p className="mt-1 px-2.5 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-white/40">
+                Troubleshooting
+              </p>
+              <Row
+                title="Next server"
+                subtitle="If this one isn't starting"
+                onClick={cycleServer}
+              />
+              <a
+                href={src}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={() => setMenu(false)}
+                className="pointer-events-auto flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-left transition hover:bg-white/10"
+              >
+                <span className="min-w-0">
+                  <span className="block truncate text-[12.5px] font-medium text-white/90">
+                    Open in new tab
+                  </span>
+                  <span className="block truncate text-[10.5px] text-white/45">
+                    If the in-site player is blocked
+                  </span>
+                </span>
+              </a>
+
               {anime && (
                 <>
                   <p className="mt-1 px-2.5 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-white/40">
@@ -772,24 +799,6 @@ export function Player({
                 </button>
               </div>
             </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* "nothing is playing" — one tap restarts the frame from a real click */}
-        <AnimatePresence>
-          {nudge && !paused && !upNext && (
-            <motion.button
-              type="button"
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 10 }}
-              transition={{ duration: 0.2 }}
-              onClick={restart}
-              className="pointer-events-auto absolute bottom-4 left-3 flex items-center gap-2 rounded-full bg-[var(--nf-accent)] px-3.5 py-2 text-[12px] font-semibold text-white shadow-lg shadow-black/50 transition hover:brightness-110 md:bottom-6 md:left-6"
-            >
-              <PlayIcon width={13} height={13} />
-              Stream paused? Tap to start
-            </motion.button>
           )}
         </AnimatePresence>
 

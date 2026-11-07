@@ -82,11 +82,14 @@ Films and series resolve against TMDB ids, anime resolves against AniList ids, s
 starts on a server that actually knows it:
 
 ```
-Films & series:  frameXTV (default) → CineLite (4K, subs) → RiveStream (last resort)
-                 → VidNest → AniEmbed
-
-Anime:           VidNest (sub/dub) → AniEmbed (sub/dub) → CineLite → frameXTV → RiveStream
+Films & series:  frameXTV (default) → VidFast (4K) → VidLink (subs) → CineLite → RiveStream
+Anime:           VidNest (sub/dub) → AniEmbed (sub/dub) → VidFast → VidLink → frameXTV
 ```
+
+The chain only moves on when a frame genuinely fails to load (18s with no `load` event). Playback
+telemetry is *not* used as a liveness signal: most embeds never `postMessage`, and treating silence
+as failure used to bounce a healthy stream through every provider. If a specific source stalls,
+**Player menu → Next server**, or **Open in new tab**, always gets you out.
 
 Anime titles are matched to their AniList id from the catalogue, the AniList GraphQL API, or the
 AniList relational id map (ARM), then played with the chosen audio track (sub or dub). Each server can be
