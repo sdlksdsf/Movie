@@ -8,13 +8,22 @@ import type { Title } from "@/lib/types";
  * Anime servers speak AniList ids, which `anime-ids.ts` resolves when a title
  * only knows its name.
  *
- *   Films & series    frameXTV → CineLite → RiveStream → VidNest
- *   Anime             VidNest → AniEmbed → CineLite → frameXTV → RiveStream
+ *   Films & series    frameXTV → VidFast → VidLink → CineLite → RiveStream
+ *   Anime             VidNest → AniEmbed → VidFast → VidLink → frameXTV
  *
- * The player walks the chain automatically when a server stops responding.
+ * Every chain mixes independent providers, so one dead host never takes a
+ * title down. The player only walks the chain when a frame genuinely fails to
+ * load — never because a provider doesn't broadcast playback telemetry.
  */
 
-export type PlayerId = "framex" | "cinelite" | "rivestream" | "vidnest" | "aniembed";
+export type PlayerId =
+  | "framex"
+  | "vidfast"
+  | "vidlink"
+  | "cinelite"
+  | "rivestream"
+  | "vidnest"
+  | "aniembed";
 
 export type AudioTrack = "sub" | "dub";
 
@@ -44,13 +53,29 @@ export const PLAYERS: PlayerDef[] = [
     rank: 0,
   },
   {
+    id: "vidfast",
+    label: "VidFast",
+    short: "Fast",
+    hint: "Fast start · 4K, 8 internal sources",
+    host: "https://vidfast.pro",
+    rank: 1,
+  },
+  {
+    id: "vidlink",
+    label: "VidLink",
+    short: "Link",
+    hint: "Backup · 1080p, 13 subtitle tracks",
+    host: "https://vidlink.pro",
+    rank: 2,
+  },
+  {
     id: "vidnest",
     label: "VidNest",
     short: "Nest",
     hint: "Anime specialist · 1080p, sub & dub",
     host: "https://vidnest.fun",
     badge: "Anime",
-    rank: 1,
+    rank: 5,
     animeOnly: true,
   },
   {
@@ -59,7 +84,7 @@ export const PLAYERS: PlayerDef[] = [
     short: "Ani",
     hint: "Anime backup · skip intro & ending",
     host: "https://aniembed.se",
-    rank: 2,
+    rank: 6,
     animeOnly: true,
   },
   {
@@ -106,8 +131,8 @@ export function isAnimeTitle(title: Title) {
  */
 export function playOrder(title: Title): PlayerId[] {
   return isAnimeTitle(title)
-    ? ["vidnest", "aniembed", "cinelite", "framex", "rivestream"]
-    : ["framex", "cinelite", "rivestream", "vidnest", "aniembed"];
+    ? ["vidnest", "aniembed", "vidfast", "vidlink", "framex"]
+    : ["framex", "vidfast", "vidlink", "cinelite", "rivestream"];
 }
 
 /** Every other server, in chain order. */
@@ -136,6 +161,7 @@ export function canPlay(id: PlayerId, title: Title, anilistId?: number | null): 
   const ani = anilistId ?? title.anilistId ?? 0;
   if (id === "aniembed") return Boolean(ani);
   if (id === "vidnest" || id === "cinelite") return Boolean(ani || title.tmdbId);
+  /* vidfast / vidlink / framex / rivestream all need a TMDB id */
   return Boolean(title.tmdbId);
 }
 
@@ -185,6 +211,30 @@ export function buildSrc(o: {
     const params = new URLSearchParams({ lang: audio, autoplay: "1" });
     if (resume) params.set("t", String(resume));
     return `https://aniembed.se/e/${ani}/${Math.max(1, episode)}?${params.toString()}`;
+  }
+
+  if (player === "vidfast") {
+    // https://vidfast.pro/movie/{tmdbId} · /tv/{tmdbId}/{s}/{e}
+    const base =
+      title.kind === "series"
+        ? `https://vidfast.pro/tv/${title.tmdbId}/${season}/${episode}`
+        : `https://vidfast.pro/movie/${title.tmdbId}`;
+    const params = new URLSearchParams({ autoPlay: "true", theme: ACCENT });
+    if (title.kind === "series") params.set("nextButton", "true");
+    if (resume) params.set("startAt", String(resume));
+    return `${base}?${params.toString()}`;
+  }
+
+  if (player === "vidlink") {
+    // https://vidlink.pro/movie/{tmdbId} · /tv/{tmdbId}/{s}/{e}
+    const base =
+      title.kind === "series"
+        ? `https://vidlink.pro/tv/${title.tmdbId}/${season}/${episode}`
+        : `https://vidlink.pro/movie/${title.tmdbId}`;
+    const params = new URLSearchParams({ autoplay: "true", primaryColor: ACCENT });
+    if (title.kind === "series") params.set("nextbutton", "true");
+    if (resume) params.set("startAt", String(resume));
+    return `${base}?${params.toString()}`;
   }
 
   if (player === "framex") {
