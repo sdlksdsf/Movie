@@ -1,6 +1,7 @@
 import { titles } from "@/data/titles";
 import { generatedArt } from "@/data/generated";
 import type { Genre, Season, Title } from "@/lib/types";
+import { allowedFor } from "@/lib/avatars";
 
 export const allTitles = titles;
 
@@ -11,6 +12,18 @@ export function isKidsSafe(title: Title) {
   if (title.genres.includes("Horror") || title.genres.includes("Crime")) return false;
   if (!title.genres.some((g) => KIDS_GENRES.includes(g))) return false;
   return !["18+", "TV-MA", "R"].includes(title.maturity);
+}
+
+/** Everything a profile may see — kids and maturity levels in one place. */
+export function visibleFor(
+  title: Title,
+  profile?: { kids?: boolean; maturity?: string } | null,
+  hideMature = false,
+) {
+  if (profile?.kids) return isKidsSafe(title);
+  const level = (profile?.maturity ?? "all") as "kids" | "7" | "13" | "16" | "all";
+  if (level === "all") return !hideMature || !["18+", "TV-MA", "R", "NC-17"].includes(title.maturity);
+  return allowedFor(level, title.maturity);
 }
 
 export function animeTitles() {

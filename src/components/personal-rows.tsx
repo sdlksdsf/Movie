@@ -3,7 +3,7 @@
 import { useMemo } from "react";
 import { Row } from "@/components/row";
 import { useStore } from "@/components/store";
-import { isKidsSafe } from "@/lib/catalog";
+import { visibleFor } from "@/lib/catalog";
 import { becauseYouWatched, favouriteGenre, topPicks } from "@/lib/taste";
 import type { Title } from "@/lib/types";
 
@@ -17,7 +17,7 @@ export function PersonalRows() {
   const kids = Boolean(profile?.kids);
 
   const rows = useMemo(() => {
-    const safe = (titles: Title[]) => (kids ? titles.filter(isKidsSafe) : titles);
+    const safe = (titles: Title[]) => titles.filter((title) => visibleFor(title, profile));
     const out: Array<{ id: string; title: string; hint?: string; slugs: string[]; ranked?: boolean }> = [];
 
     const picks = safe(topPicks(progress, 18));
@@ -59,7 +59,7 @@ export function PersonalRows() {
     }
 
     return out;
-  }, [progress, kids]);
+  }, [progress, kids, profile]);
 
   if (rows.length === 0) return null;
 

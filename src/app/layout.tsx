@@ -23,6 +23,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" style={{ backgroundColor: "#141414", colorScheme: "dark" }}>
       <head>
+        <link rel="preconnect" href="https://image.tmdb.org" crossOrigin="" />
+        <link rel="preconnect" href="https://m.media-amazon.com" crossOrigin="" />
+        <link rel="preconnect" href="https://images.metahub.space" crossOrigin="" />
+        <link rel="dns-prefetch" href="https://api.themoviedb.org" />
+        <link rel="dns-prefetch" href="https://www.youtube-nocookie.com" />
         {/* paint the dark background before the stylesheet arrives — kills the white flash */}
         <style
           dangerouslySetInnerHTML={{

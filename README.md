@@ -1,218 +1,190 @@
-# NOFLIX Clone — a full, working streaming UI
+# NOFLIX
 
-A pixel-faithful NOFLIX experience built with **Next.js 15 (App Router)**, **Tailwind CSS v4**
-and **Framer Motion**. Browse, search, save, preview on hover and stream — everything in one
-self-contained app.
+**A Netflix-style streaming front-end for the open web.** Thousands of films, series and anime;
+customisable profiles with real kids restrictions; three stream servers with automatic failover;
+and a settings screen that actually changes the product.
 
-![stack](https://img.shields.io/badge/Next.js-15-black) ![stack](https://img.shields.io/badge/React-19-blue) ![stack](https://img.shields.io/badge/Tailwind-4-38bdf8)
+[![Live demo](https://img.shields.io/badge/live-noflix--taupe.vercel.app-e50914?style=for-the-badge)](https://noflix-taupe.vercel.app)
+[![Next.js](https://img.shields.io/badge/Next.js-15-000?style=for-the-badge&logo=nextdotjs)](https://nextjs.org/)
+[![React](https://img.shields.io/badge/React-19-087ea4?style=for-the-badge&logo=react)](https://react.dev/)
+[![Tailwind CSS](https://img.shields.io/badge/Tailwind-4-38bdf8?style=for-the-badge&logo=tailwindcss)](https://tailwindcss.com/)
+
+![NOFLIX](https://noflix-taupe.vercel.app/opengraph-image)
+
+> **Live site → [noflix-taupe.vercel.app](https://noflix-taupe.vercel.app)**
 
 ---
 
+## Table of contents
+
+- [What it does](#what-it-does)
+- [Screens](#screens)
+- [Profiles and kids mode](#profiles-and-kids-mode)
+- [Stream servers and failover](#stream-servers-and-failover)
+- [Settings](#settings)
+- [Architecture](#architecture)
+- [Run it locally](#run-it-locally)
+- [Deploy it yourself](#deploy-it-yourself)
+- [Privacy and legal](#privacy-and-legal)
+- [Credits](#credits)
+
 ---
 
-## 🔌 Data pipeline & public API
+## What it does
 
-The catalogue is no longer a hand-maintained list. Titles flow in through a
-provider layer (`src/lib/providers.ts`) and are merged with the curated set.
+| | |
+|---|---|
+| **Catalogue** | A bundled catalogue for instant first paint, plus a live TMDB catalogue that pages in as you scroll — thousands of films, series and anime, deduped and cached. |
+| **Hero billboard** | Rotating feature banners with muted trailer previews, match score, maturity badge and one-tap play. |
+| **Dense shelves** | 20+ rows per page, 20–26 titles each, all derived from the catalogue — no hand-written slug lists that go stale. |
+| **Search** | Instant local search across the bundled catalogue, extended with live TMDB results. |
+| **My List & Continue Watching** | Per profile, accurate to the episode and second, with resume positions passed into the player. |
+| **Profiles** | Twelve hand-drawn vector characters, any accent colour, five maturity levels, per-profile autoplay. |
+| **Kids mode** | A separate green space where only animation, family and pre-school titles exist — shelves, grids and search all filtered. |
+| **Settings** | Accent colour, card density, motion, hover previews, data saver, default server, quality, language, privacy, developer tools. |
+| **Developer panel** | Live status and latency for every API and stream server, straight from the browser, plus repository stars and build info. |
+| **Legal** | Real About, Privacy, Terms and Copyright/DMCA pages — no lorem ipsum. |
+
+## Screens
+
+The site is live; these open the real thing:
+
+| Screen | Live |
+|---|---|
+| Home / billboard | [/](https://noflix-taupe.vercel.app/) |
+| Live catalogue browser | [/browse](https://noflix-taupe.vercel.app/browse) |
+| Anime | [/anime](https://noflix-taupe.vercel.app/anime) |
+| My List | [/my-list](https://noflix-taupe.vercel.app/my-list) |
+| Settings | [/settings](https://noflix-taupe.vercel.app/settings) |
+| Developer status | [/settings?tab=developer](https://noflix-taupe.vercel.app/settings?tab=developer) |
+| About | [/about](https://noflix-taupe.vercel.app/about) |
+
+## Profiles and kids mode
+
+Profiles are stored per device and are fully customisable:
+
+- **Character** — 12 vector avatars (robot, astronaut, panda, fox, hero, cat, alien, dragon,
+  unicorn, bear, ninja, cinema). Drawn as SVG, so they stay sharp everywhere and weigh nothing.
+- **Colour** — 12 presets plus a full colour picker; the same accent tints the avatar and, if you
+  want, the whole site.
+- **Maturity** — `Little kids · 7+ · 13+ · 16+ · All`, enforced across shelves, grids, search,
+  My List and live rows.
+- **Kids profile** — sets a softer green theme and hides horror, crime, war and adult-flagged
+  titles everywhere. Kids rows are limited to animation, family and pre-school genres.
+
+## Stream servers and failover
+
+Playback is delegated to third-party embeds. NOFLIX walks the list automatically when a server
+does not respond, so a dead provider never leaves you on a black screen:
 
 ```
-providers                used for                          key needed
------------------------- --------------------------------- ----------
-TMDB                     movies + series, posters, art     TMDB_API_KEY (free)
-TVMaze                   series, episodes, cast            none
-Jikan (MyAnimeList)      anime                             none
-IMDb suggestions         title search + poster art         none
-Cinemeta (Stremio)       tmdb/imdb ids + blurbs + art      none  ← sync script
+frameXTV  →  CineLite  →  RiveStream
+(default)    (4K, subs)   (last resort)
 ```
 
-**Sync more titles**
+Each server can be selected manually in the player menu or set as the default in **Settings →
+Playback**. If a title has no source on the chosen server, the next one is picked automatically.
+
+## Settings
+
+`/settings` ships six panels:
+
+1. **Profiles** — edit name, character, colour, maturity, autoplay; switch or delete profiles.
+2. **Appearance** — accent colour (live), card density, reduce motion, hover previews, data saver.
+3. **Playback** — default server, quality, language, autoplay next episode.
+4. **Privacy & data** — mature-title filter, export your data as JSON, delete everything.
+5. **Developer** — service health with latency, repository stats, build and runtime info.
+6. **About & legal** — links to the About, Privacy, Terms and DMCA pages.
+
+## Architecture
+
+```
+app/                      routes (home, browse, anime, movies, tv-shows, my-list, title, play, settings, legal)
+components/               UI  (billboard, shelves, player, profiles, settings, developer panel)
+lib/
+  catalog.ts              bundled catalogue + visibility rules (kids / maturity)
+  discover.ts             live TMDB catalogue paging (films, series, anime)
+  live.ts                 TMDB shelves, Jikan anime, TVMaze
+  players.ts              three embed providers + failover chain + URL builders
+  trailer.ts              TMDB trailers with a Cinemeta backstop, ranked candidates
+  cloud.ts                optional Supabase mirror (RLS, per-device row)
+data/                     bundled titles and artwork maps
+```
+
+- **Framework** Next.js 15 App Router · React 19 · TypeScript
+- **Styling** Tailwind CSS 4 with CSS variables for theming
+- **Motion** Framer Motion, opt-out via *Reduce motion*
+- **Hosting** Vercel · **Optional database** Supabase (Postgres + row-level security)
+
+Performance choices: lazy-mounted shelves (`IntersectionObserver`), `content-visibility` on rows,
+lazy/async artwork, skeletons instead of empty boxes, preconnected image hosts, and a data-saver
+mode that drops blur and heavy motion on slow connections.
+
+## Run it locally
 
 ```bash
-npm run sync-catalog                 # merge ~120 popular titles
-npm run sync-catalog -- --limit 400  # go bigger
-npm run sync-catalog -- --only series
-```
-
-The script resolves a verified `moviedb_id` + `imdb_id` for every title, writes
-`src/data/catalog.generated.json`, and the app merges it with the curated
-`src/data/titles.ts` at build time (artwork falls back to the IMDb CDN so no
-title is ever a grey box). Set `TMDB_API_KEY` in `.env.local` to unlock TMDB in
-the live search and in the provider status endpoint.
-
-**JSON API** (all cacheable, no auth)
-
-| Route | Returns |
-| --- | --- |
-| `GET /api/catalog?q=&kind=&genre=&limit=&offset=` | paginated catalogue |
-| `GET /api/catalog/[slug]` | full record + seasons + “More Like This” |
-| `GET /api/rows` | the home-page row composition |
-| `GET /api/search?q=&live=1` | local hits + live provider results |
-| `GET /api/providers` | which metadata sources are active |
-
-Anything the live providers surface can be played straight away —
-`/play/{tmdbId}?title=…&kind=…` renders the player for titles that are
-not in the bundled catalogue yet.
-
----
-
-## 🎬 Player (CineLite)
-
-`/watch/[kind]/[slug]` and `/play/[id]` render a single full-bleed embed with a
-slim auto-hiding bar: back, title, **server** (Viper → CineLite, Archer → FrameXTV),
-**quality** (4K → 480p), **subtitles/language** (EN, اردو, हिन्दी, العربية, ES, FR),
-next-episode and an episode sheet.
-
-* routes: `/{tmdbId}` · `/tv/{tmdbId}/{s}/{e}` · `/anime/{anilistId}/{ep}`
-* params: `?color=e50914&suggestionui=true&quality=1080p[&t=resume]`
-* bridge in: `CINELITE_SYNC_SETTINGS`, `CINELITE_SYNC_FEBBOX_TOKEN`
-* bridge out: `CINELITE_PLAYBACK_PROGRESS` (Continue Watching + resume), `CINELITE_EXIT_PLAYER`
-* **the iframe URL never depends on playback state**, so the stream can't reload mid-play
-
-## 🔥 Live catalogue (browser-side, no server network needed)
-
-`src/lib/live.ts` + `src/components/live-rows.tsx` stream extra shelves at runtime:
-
-* **TMDB** — thousands of movies/series/anime (paste a free key in the “Add key” bar,
-  or set `NEXT_PUBLIC_TMDB_KEY`)
-* **TVMaze** — 40 highly rated series, keyless (IMDb → TMDB resolved on click)
-* **Jikan** — 50 top anime, keyless (MAL → AniList resolved on click, plays via `/anime/`)
-
-## 👤 Accounts
-
-First visit creates a profile: name, avatar, and **Adult / Kids**. Kids profiles
-only see family-safe titles in rows browsing, browse grids and search. Profiles,
-My List and progress are per-device (`nf.*` in localStorage), and a profile can be
-added or removed any time from “Manage profiles”.
-
-## ✨ What's inside
-
-**Browsing**
-- Animated “Who's watching?” profile gate + a NOFLIX-style *tudum* splash on entry
-- Auto-rotating billboard hero with Ken Burns drift, match score, maturity badge and a
-  Play / More Info / My List action row
-- 15+ curated rows: Trending, Top 10 in Pakistan (giant rank numerals), NOFLIX Originals,
-  Continue Watching (with real progress bars), Because-you-watched, genres, New Releases…
-- Poster cards that lift on hover, with a **floating preview panel** (play, add to list, like,
-  match %, genres) rendered in a portal so it never gets clipped by the row scroller
-- Smooth, momentum-friendly horizontal rows with edge-aware arrows and snap scrolling
-- Reveal-on-scroll animations, lazy artwork, blur-up placeholders, `prefers-reduced-motion`
-  support
-
-**Discovery**
-- Instant search overlay (`/` or `⌘K` anywhere) — searches titles, cast, genres and year
-- Genre landing pages (`/genre/action`, …) with filter + sort chips
-- Dedicated TV Shows / Movies / New & Popular / Browse All / My List pages
-
-**Title detail**
-- NOFLIX-style modal: blurred key art header, cast & creator, tagline, season/episode browser,
-  “More Like This” and an About block
-- Deep-linkable standalone detail pages at `/title/[slug]`
-
-**Playback**
-- Full-bleed player at `/watch/[kind]/[slug]` powered by the **CineLite** embed
-  (`https://embed.cinelite.xyz/{tmdbId}`, `/tv/{tmdbId}/{season}/{episode}`,
-  `/anime/{anilistId}/{episode}`), themed with our brand red (`?color=e50914`),
-  pause suggestions on, starting quality selectable (4K → 480p)
-- Custom chrome that auto-hides: back, title, season/episode picker, server switcher,
-  a server switcher (Viper / Archer), quality and subtitle-language menus, next-episode
-  button and a progress rail fed by the player's real `CINELITE_PLAYBACK_PROGRESS` telemetry
-- Keyboard shortcuts — `Space` play/pause, `←`/`→` ±10s, `M` mute, `F` fullscreen,
-  `N` next episode, `Esc` exit
-- Watch progress is written back into **Continue Watching** (localStorage)
-
-**Persistence** — profile, My List and playback progress live in `localStorage`; no account,
-no backend.
-
----
-
-## 🚀 Run it
-
-```bash
+git clone https://github.com/sdlksdsf/Movie.git
+cd Movie
 npm install
-npm run dev      # http://localhost:3000
+npm run dev     # http://localhost:3000
 ```
 
-Production:
+Optional environment variables (all client-safe, none required to run):
 
-```bash
-npm run build
-npm start
+| Variable | Purpose |
+|---|---|
+| `NEXT_PUBLIC_TMDB_KEY` | Overrides the TMDB key used for metadata and trailers |
+| `NEXT_PUBLIC_SUPABASE_URL` | Turns on cloud sync |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Anonymous (RLS-protected) key for that project |
+
+## Deploy it yourself
+
+1. Import the repository into Vercel — it is a stock Next.js app, no build tweaks needed.
+2. (Optional) create a Supabase project and run:
+
+```sql
+create table if not exists public.app_state (
+  device_id  text primary key,
+  data       jsonb not null default '{}'::jsonb,
+  updated_at timestamptz not null default now()
+);
+
+alter table public.app_state enable row level security;
+
+create policy "read own device state" on public.app_state for select
+  using (device_id = coalesce(current_setting('request.headers', true)::json ->> 'x-device-id', ''));
+
+create policy "insert own device state" on public.app_state for insert
+  with check (device_id = coalesce(current_setting('request.headers', true)::json ->> 'x-device-id', ''));
+
+create policy "update own device state" on public.app_state for update
+  using (device_id = coalesce(current_setting('request.headers', true)::json ->> 'x-device-id', ''))
+  with check (device_id = coalesce(current_setting('request.headers', true)::json ->> 'x-device-id', ''));
 ```
 
-Other scripts:
+3. Add the two Supabase variables to the Vercel project and redeploy. Sync is optional — without
+   it the app is fully functional and entirely local.
 
-```bash
-npm run typecheck        # tsc --noEmit
-npm run images           # rebuild optimised artwork from ./image-search
-```
+## Privacy and legal
 
----
+- No accounts, no passwords, no analytics, no advertising trackers, no cookies.
+- Profiles, My List and progress live in `localStorage`; cloud sync is optional and one row per
+  device, protected by row-level security.
+- Full text: [Privacy](https://noflix-taupe.vercel.app/privacy) ·
+  [Terms](https://noflix-taupe.vercel.app/terms) ·
+  [Copyright & DMCA](https://noflix-taupe.vercel.app/dmca) ·
+  [About](https://noflix-taupe.vercel.app/about)
 
-## 🗂 Project structure
+## Credits
 
-```
-src/
-  app/                 routes (App Router)
-    page.tsx           home / browse
-    watch/[kind]/[slug]  the player
-    title/[slug]       deep-link detail page
-    genre/[slug] tv-shows movies new-popular browse my-list
-    globals.css        design tokens, utilities, keyframes
-  components/          UI (billboard, row, title-modal, player, navbar, …)
-  data/
-    titles.ts          the catalogue (52 titles, hand-written copy)
-    rows.ts            row definitions
-    artwork.ts         generated poster/backdrop manifests
-  lib/
-    catalog.ts         lookups, search, similarity, episode generation
-scripts/
-  artwork-urls.json    IMDb artwork ids per title
-  prepare-images.mjs   crops + converts raw art into public/img/**/*.webp
-public/img/
-  posters/ backdrops/  optimised local artwork
-```
+Metadata, artwork and trailer identifiers come from **TMDB**; episode data from **TVMaze**; anime
+data from **Jikan (MyAnimeList)**. Trailers play in a privacy-enhanced YouTube embed. Video is
+served by independent third-party embed providers — this project does not host, upload or store any
+video content.
 
-### Adding a title
+This product uses the TMDB API but is not endorsed or certified by TMDB. Not affiliated with
+Netflix or any studio. All titles and artwork belong to their respective owners.
 
-1. Append an entry to `src/data/titles.ts` (`slug`, `tmdbId`, copy, genres, accent…).
-   The `tmdbId` is what the player uses, so playback works immediately.
-2. Drop artwork in `public/img/posters/<slug>.webp` (2:3) and/or
-   `public/img/backdrops/<slug>.webp` (16:9), **or** add the IMDb id to
-   `scripts/artwork-urls.json` and run `npm run images`.
-3. Add the slug to one or more rows in `src/data/rows.ts`.
+## Licence
 
-Artwork resolves through a fallback ladder: IMDb CDN → local WebP → a generated
-typographic plate — so the grid always looks intentional, even offline.
-
----
-
-## 🎬 Player integration
-
-The embed is appended without touching playback internals:
-
-```ts
-// movies
-https://embed.cinelite.xyz/157336?color=e50914&suggestionui=true&quality=1080p&t=120
-// series
-https://embed.cinelite.xyz/tv/259909/1/3?color=e50914&suggestionui=true&quality=1080p
-```
-
-The custom controls talk to the iframe through the documented `postMessage` SDK
-(`play`, `pause`, `seek`, `seekBy`, `mute`, `setVolume`, `setProvider`, `setSubtitle`) and listen
-for `CINELITE_PLAYBACK_PROGRESS` to drive the progress rail and Continue Watching.
-Progress is saved both in our own store (`nf.progress`) and in the player's
-`cw_{tmdbId}` key, so a resume lands on the right frame. The player's own exit
-button (`CINELITE_EXIT_PLAYER`) is wired to our router, server/quality/subtitle
-changes are pushed in via `CINELITE_SYNC_SETTINGS`, and anime titles carry an
-AniList id so they stream through the `/anime/` route.
-
----
-
-## ⚖️ Notes
-
-This is a **learning/demo project**. All titles, metadata and artwork belong to NOFLIX and the
-respective studios; posters are hot-linked from IMDb's public image CDN with local fallbacks.
-Streaming is provided by third-party embed services (CineLite primary, FrameXTV fallback) — nothing is hosted here.
-
-Built with Next.js 15, React 19, Tailwind CSS v4, Framer Motion 12, Inter + Anton (self-hosted
-via Fontsource), and ImageMagick for the artwork pipeline.
+Released under the MIT licence — see [LICENSE](./LICENSE).

@@ -1,14 +1,15 @@
 import type { Title } from "@/lib/types";
 
 /**
- * Stream sources.
+ * Stream sources, in failover order.
  *
- * frameXTV is the default: it starts fastest and plays both movies and series.
- * CineLite is the backup (4K + subtitles + anime via AniList ids).
- * If a title can't be served by a source we fall through to the other one.
+ * frameXTV starts fastest and is the default; CineLite is the feature-rich
+ * backup (4K, subtitles, anime ids); RiveStream is the last resort that keeps
+ * the site playable when the first two are down. The player walks this list
+ * automatically when a source stops responding.
  */
 
-export type PlayerId = "framex" | "cinelite";
+export type PlayerId = "framex" | "cinelite" | "rivestream";
 
 export type PlayerDef = {
   id: PlayerId;
@@ -16,8 +17,9 @@ export type PlayerDef = {
   short: string;
   hint: string;
   host: string;
-  /** shown next to the source in the picker */
   badge?: string;
+  /** order in the failover chain */
+  rank: number;
 };
 
 export const DEFAULT_PLAYER: PlayerId = "framex";
@@ -30,6 +32,7 @@ export const PLAYERS: PlayerDef[] = [
     hint: "Primary · fastest start",
     host: "https://framextv.cc",
     badge: "Default",
+    rank: 0,
   },
   {
     id: "cinelite",
@@ -37,6 +40,15 @@ export const PLAYERS: PlayerDef[] = [
     short: "Lite",
     hint: "Backup · 4K + subtitles",
     host: "https://embed.cinelite.xyz",
+    rank: 1,
+  },
+  {
+    id: "rivestream",
+    label: "RiveStream",
+    short: "Rive",
+    hint: "Fallback · if both are down",
+    host: "https://rivestream.ru",
+    rank: 2,
   },
 ];
 
@@ -47,28 +59,45 @@ export const DEFAULT_QUALITY: Quality = "1080p";
 const ACCENT = "e50914";
 
 export function isPlayerId(value: unknown): value is PlayerId {
-  return value === "framex" || value === "cinelite";
+  return value === "framex" || value === "cinelite" || value === "rivestream";
 }
 
 export function playerMeta(id: PlayerId): PlayerDef {
   return PLAYERS.find((p) => p.id === id) ?? PLAYERS[0];
 }
 
-export function otherPlayer(id: PlayerId): PlayerId {
-  return id === "framex" ? "cinelite" : "framex";
+/** Every other source, in failover order. */
+export function otherPlayers(id: PlayerId): PlayerId[] {
+  return PLAYERS.filter((p) => p.id !== id)
+    .sort((a, b) => a.rank - b.rank)
+    .map((p) => p.id);
 }
 
-/** frameXTV needs a TMDB id; CineLite also accepts AniList ids alone. */
+export function otherPlayer(id: PlayerId): PlayerId {
+  return otherPlayers(id)[0] ?? "framex";
+}
+
+/** The next server to try after `id`, or the first one when the chain wraps. */
+export function nextServer(id: PlayerId): PlayerId {
+  const sorted = [...PLAYERS].sort((a, b) => a.rank - b.rank).map((p) => p.id);
+  const index = sorted.indexOf(id);
+  return sorted[(index + 1) % sorted.length];
+}
+
+/** Every server needs a TMDB id; CineLite can also play AniList-only anime. */
 export function canPlay(id: PlayerId, title: Title): boolean {
-  if (id === "framex") return Boolean(title.tmdbId);
-  return Boolean(title.tmdbId || title.anilistId);
+  if (id === "cinelite") return Boolean(title.tmdbId || title.anilistId);
+  return Boolean(title.tmdbId);
 }
 
 /** The source we can actually use right now, preferring the requested one. */
 export function resolvePlayer(preferred: PlayerId, title: Title): PlayerId {
   if (canPlay(preferred, title)) return preferred;
-  const other = otherPlayer(preferred);
-  return canPlay(other, title) ? other : preferred;
+  const fallback = PLAYERS.filter((p) => p.id !== preferred)
+    .sort((a, b) => a.rank - b.rank)
+    .map((p) => p.id)
+    .find((id) => canPlay(id, title));
+  return fallback ?? preferred;
 }
 
 export function buildSrc(o: {
@@ -95,6 +124,20 @@ export function buildSrc(o: {
     params.set("controls", "1");
     if (resume) params.set("t", String(resume));
     return `${base}?${params.toString()}`;
+  }
+
+  if (player === "rivestream") {
+    // https://rivestream.ru/embed?type=movie&id={tmdbId}
+    // https://rivestream.ru/embed?type=tv&id={tmdbId}&season={s}&episode={e}
+    const params = new URLSearchParams();
+    params.set("type", title.kind === "series" ? "tv" : "movie");
+    params.set("id", String(title.tmdbId));
+    if (title.kind === "series") {
+      params.set("season", String(season));
+      params.set("episode", String(episode));
+    }
+    if (resume) params.set("t", String(resume));
+    return `https://rivestream.ru/embed?${params.toString()}`;
   }
 
   const base = title.anilistId

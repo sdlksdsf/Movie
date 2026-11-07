@@ -244,3 +244,47 @@ a,
     -webkit-backdrop-filter: blur(10px);
   }
 }
+
+/* ------------------------------------------------------------------ *
+ * Theme tokens — driven by Settings → Appearance
+ * ------------------------------------------------------------------ */
+:root {
+  --nf-accent: #e50914;
+  --nf-card-w: 186px;
+}
+
+[data-density="compact"] { --nf-card-w: 152px; }
+[data-density="cozy"] { --nf-card-w: 186px; }
+[data-density="large"] { --nf-card-w: 226px; }
+
+/* reduce-motion preference + OS setting: keep the fades, drop the travel */
+[data-motion="off"] *,
+[data-motion="off"] *::before,
+[data-motion="off"] *::after {
+  animation-duration: 0.001ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 120ms !important;
+}
+[data-motion="off"] .kenburns { animation: none !important; }
+
+/* data saver: no blur, no hover zoom, cheaper shadows */
+[data-saver="on"] .backdrop-blur-xl,
+[data-saver="on"] .backdrop-blur-md {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+[data-saver="on"] .kenburns { animation: none !important; }
+
+/* hover previews can be turned off entirely */
+[data-hover="off"] .hover-preview { display: none !important; }
+
+/* kids space: a warmer, rounder world so it is obvious which profile is on */
+[data-kids="on"] body {
+  background-image:
+    radial-gradient(120% 60% at 50% 0%, rgba(34, 197, 94, 0.13), transparent 60%),
+    radial-gradient(90% 50% at 90% 100%, rgba(59, 130, 246, 0.1), transparent 60%);
+  background-attachment: fixed;
+}
+[data-kids="on"] .wordmark { letter-spacing: 0.02em; }
+[data-kids="on"] .row-shell :where(img) { border-radius: 14px; }
+[data-kids="on"] nav { border-bottom: 1px solid rgba(255, 255, 255, 0.06); }
