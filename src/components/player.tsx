@@ -3,76 +3,35 @@
 import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  ArrowLeftIcon,
-  CheckIcon,
-  ChevronDownIcon,
-  NextIcon,
-  SubtitlesIcon,
-} from "@/components/icons";
+import { ArrowLeftIcon, CheckIcon, ChevronDownIcon, NextIcon, SparkIcon } from "@/components/icons";
 import { useStore } from "@/components/store";
 import { Wordmark } from "@/components/wordmark";
 import type { Season, Title } from "@/lib/types";
 import { cn } from "@/lib/cn";
 
-/* ------------------------------------------------------------------ */
+/**
+ * One player, one set of controls.
+ *
+ * The stream is a third-party iframe (CineLite) that owns playback: play/pause,
+ * seek, volume, subtitles, audio track, cast and fullscreen all live in *its*
+ * bottom bar. We deliberately do not re-implement those, because a cross-origin
+ * iframe can't be controlled that way — that's what produced the "two players"
+ * look before.
+ *
+ * Our layer only does the things the embed cannot:
+ *   back navigation · which server · default quality (URL param) · episodes
+ */
 
 type ServerId = "viper" | "archer";
 const SERVERS: Array<{ id: ServerId; label: string; hint: string }> = [
-  { id: "viper", label: "Viper", hint: "CineLite · 4K + subs" },
+  { id: "viper", label: "Viper", hint: "CineLite · 4K + subtitles" },
   { id: "archer", label: "Archer", hint: "FrameXTV · backup" },
 ];
 
 const QUALITIES = ["4k", "1080p", "720p", "480p"] as const;
 type Quality = (typeof QUALITIES)[number];
 
-const SUBTITLE_LANGS = [
-  { id: "off", label: "Off" },
-  { id: "en", label: "English" },
-  { id: "ur", label: "اردو · Urdu" },
-  { id: "hi", label: "हिन्दी · Hindi" },
-  { id: "ar", label: "العربية · Arabic" },
-  { id: "es", label: "Español" },
-  { id: "fr", label: "Français" },
-];
-
 const ACCENT = "e50914";
-
-function buildSrc(o: {
-  server: ServerId;
-  title: Title;
-  season: number;
-  episode: number;
-  quality: Quality;
-  resumeAt: number | null;
-}) {
-  const { server, title, season, episode, quality, resumeAt } = o;
-  const params = new URLSearchParams();
-
-  if (server === "viper") {
-    const base = title.anilistId
-      ? `https://embed.cinelite.xyz/anime/${title.anilistId}/${episode}`
-      : title.kind === "series"
-        ? `https://embed.cinelite.xyz/tv/${title.tmdbId}/${season}/${episode}`
-        : `https://embed.cinelite.xyz/${title.tmdbId}`;
-    params.set("color", ACCENT);
-    params.set("suggestionui", "true");
-    params.set("quality", quality);
-    params.set("autoplay", "1");
-    if (resumeAt && resumeAt > 20) params.set("t", String(Math.floor(resumeAt)));
-    return `${base}?${params.toString()}`;
-  }
-
-  const base =
-    title.kind === "series"
-      ? `https://framextv.xyz/embed/${title.tmdbId}/${season}/${episode}`
-      : `https://framextv.xyz/embed/${title.tmdbId}`;
-  params.set("autoplay", "1");
-  params.set("muted", "0");
-  params.set("controls", "1");
-  if (resumeAt && resumeAt > 20) params.set("t", String(Math.floor(resumeAt)));
-  return `${base}?${params.toString()}`;
-}
 
 const ls = {
   get(key: string) {
@@ -91,18 +50,55 @@ const ls = {
   },
 };
 
+function buildSrc(o: {
+  server: ServerId;
+  title: Title;
+  season: number;
+  episode: number;
+  quality: Quality;
+  resumeAt: number | null;
+}) {
+  const { server, title, season, episode, quality, resumeAt } = o;
+
+  if (server === "viper") {
+    // /{tmdbId} for films · /tv/{tmdbId}/{s}/{e} · /anime/{anilistId}/{ep}
+    const base = title.anilistId
+      ? `https://embed.cinelite.xyz/anime/${title.anilistId}/${episode}`
+      : title.kind === "series"
+        ? `https://embed.cinelite.xyz/tv/${title.tmdbId}/${season}/${episode}`
+        : `https://embed.cinelite.xyz/${title.tmdbId}`;
+
+    const params = new URLSearchParams();
+    params.set("color", ACCENT);
+    params.set("suggestionui", "true");
+    params.set("quality", quality);
+    params.set("autoplay", "1");
+    if (resumeAt && resumeAt > 20) params.set("t", String(Math.floor(resumeAt)));
+    return `${base}?${params.toString()}`;
+  }
+
+  const base =
+    title.kind === "series"
+      ? `https://framextv.xyz/embed/${title.tmdbId}/${season}/${episode}`
+      : `https://framextv.xyz/embed/${title.tmdbId}`;
+  const params = new URLSearchParams();
+  params.set("autoplay", "1");
+  params.set("muted", "0");
+  params.set("controls", "1");
+  if (resumeAt && resumeAt > 20) params.set("t", String(Math.floor(resumeAt)));
+  return `${base}?${params.toString()}`;
+}
+
 export function Player({
   title,
   initialSeason,
   initialEpisode,
   seasons,
-  artwork,
 }: {
   title: Title;
   initialSeason: number;
   initialEpisode: number;
   seasons: Season[];
-  /** live titles have no bundled art — the page can pass a direct URL */
   artwork?: { poster?: string; backdrop?: string };
 }) {
   const router = useRouter();
@@ -112,8 +108,7 @@ export function Player({
   const [episode, setEpisode] = useState(initialEpisode);
   const [server, setServer] = useState<ServerId>("viper");
   const [quality, setQuality] = useState<Quality>("1080p");
-  const [subtitles, setSubtitles] = useState("en");
-  const [menu, setMenu] = useState<null | "server" | "quality" | "subs" | "episodes">(null);
+  const [menu, setMenu] = useState<null | "settings" | "episodes">(null);
   const [chrome, setChrome] = useState(true);
   const [started, setStarted] = useState(false);
 
@@ -122,30 +117,24 @@ export function Player({
   const savedAt = useRef(0);
   const progressRef = useRef(progress);
   progressRef.current = progress;
-  const qualityInitial = useRef(quality);
+  const loadedRef = useRef(false);
+  const triedFallback = useRef(false);
 
-  /* remember preferences */
+  /* restore preferences */
   useEffect(() => {
     const q = ls.get("nf.quality") as Quality | null;
-    const s = ls.get("nf.server") as ServerId | null;
-    const sub = ls.get("nf.subs");
-    if (q && QUALITIES.includes(q)) {
-      setQuality(q);
-      qualityInitial.current = q;
-    }
     const best = ls.get("nf.server.best") as ServerId | null;
+    const s = ls.get("nf.server") as ServerId | null;
+    if (q && QUALITIES.includes(q)) setQuality(q);
     if (best && SERVERS.some((x) => x.id === best)) setServer(best);
     else if (s && SERVERS.some((x) => x.id === s)) setServer(s);
-    if (sub) setSubtitles(sub);
   }, []);
 
   /**
-   * Resume point is resolved ONCE per episode and frozen in a ref. It must never
-   * depend on live progress state — that used to rebuild the iframe URL on every
-   * telemetry tick, which reloaded the stream forever and always landed paused.
+   * The embed URL is derived from nothing but [server, quality, season, episode].
+   * Playback telemetry is read through a ref, so it can never remount the frame
+   * (that was the endless "connecting" loop).
    */
-  /* the only inputs that may reload the stream — progress is read through a ref
-     so a telemetry tick can never remount the iframe */
   const src = useMemo(() => {
     const stored = progressRef.current[title.slug];
     const sameEpisode = stored && stored.season === season && stored.episode === episode;
@@ -153,46 +142,19 @@ export function Player({
       sameEpisode && stored.percent > 0.02 && stored.percent < 0.95 && stored.seconds
         ? stored.seconds
         : null;
-    return buildSrc({
-      server,
-      title,
-      season,
-      episode,
-      quality: qualityInitial.current,
-      resumeAt,
-    });
+    return buildSrc({ server, title, season, episode, quality, resumeAt });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [server, title.tmdbId, title.kind, title.anilistId, season, episode]);
+  }, [server, quality, title.tmdbId, title.kind, title.anilistId, season, episode]);
 
   const currentSeason = seasons.find((s) => s.number === season);
-  const episodeMeta = currentSeason?.episodes.find((e) => e.number === episode);
-  const hasNext = title.kind === "series" && Boolean(currentSeason && episode < currentSeason.episodes.length);
+  const hasNext =
+    title.kind === "series" && Boolean(currentSeason && episode < (currentSeason.episodes.length ?? 0));
 
-  /* ---- server selection: start with the last known-good one, fall back fast ---- */
-  const triedFallback = useRef(false);
-  const loadedRef = useRef(false);
-
-  const markServerGood = useCallback(
-    (id: ServerId) => {
-      if (ls.get("nf.server.best") !== id) ls.set("nf.server.best", id);
-    },
-    [],
-  );
-
-  const fallbackServer = useCallback(() => {
-    if (triedFallback.current) return;
-    triedFallback.current = true;
-    const other: ServerId = server === "viper" ? "archer" : "viper";
-    setServer(other);
-    ls.set("nf.server", other);
-    toast(`No signal — switched to ${other === "viper" ? "Viper" : "Archer"}`);
-  }, [server, toast]);
-
-  /* ---- chrome auto hide ---- */
+  /* chrome auto-hide */
   const poke = useCallback(() => {
     setChrome(true);
     if (hideTimer.current) window.clearTimeout(hideTimer.current);
-    hideTimer.current = window.setTimeout(() => setChrome(false), 3600);
+    hideTimer.current = window.setTimeout(() => setChrome(false), 3200);
   }, []);
 
   useEffect(() => {
@@ -216,28 +178,30 @@ export function Player({
     }
   }, [menu, poke]);
 
-  /* ---- talk to the embed ---- */
-  const post = useCallback((payload: Record<string, unknown>) => {
-    iframeRef.current?.contentWindow?.postMessage(payload, "*");
-  }, []);
+  /* fall back only when the frame never loads — never interrupt a live stream */
+  const fallbackServer = useCallback(() => {
+    if (triedFallback.current) return;
+    triedFallback.current = true;
+    const other: ServerId = server === "viper" ? "archer" : "viper";
+    setServer(other);
+    ls.set("nf.server", other);
+    toast(`No signal — switched to ${other === "viper" ? "Viper" : "Archer"}`);
+  }, [server, toast]);
 
   useEffect(() => {
-    post({
-      type: "CINELITE_SYNC_SETTINGS",
-      preferredQuality: quality,
-      subtitles: subtitles !== "off",
-      subtitleLanguage: subtitles === "off" ? null : subtitles,
-    });
-  }, [post, quality, subtitles]);
+    setStarted(false);
+    loadedRef.current = false;
+    const quick = window.setTimeout(() => setStarted(true), 1800);
+    const silent = window.setTimeout(() => {
+      if (!loadedRef.current) fallbackServer();
+    }, 7000);
+    return () => {
+      window.clearTimeout(quick);
+      window.clearTimeout(silent);
+    };
+  }, [src, fallbackServer]);
 
-  useEffect(() => {
-    const token = ls.get("nf.febbox");
-    if (!token) return;
-    post({ type: "CINELITE_SYNC_FEBBOX_TOKEN", token });
-    const id = window.setTimeout(() => post({ type: "CINELITE_SYNC_FEBBOX_TOKEN", token }), 2500);
-    return () => window.clearTimeout(id);
-  }, [post, src]);
-
+  /* progress + resume, from either provider */
   useEffect(() => {
     const onMessage = (event: MessageEvent) => {
       const data = event.data;
@@ -280,7 +244,6 @@ export function Player({
       const current = Number(p.currentTime) || 0;
       const total = Number(p.duration) || 0;
       const pct = Number(p.progress ?? (total ? (current / total) * 100 : 0)) || 0;
-
       setStarted(true);
 
       const now = Date.now();
@@ -300,26 +263,6 @@ export function Player({
     return () => window.removeEventListener("message", onMessage);
   }, [router, setProgress, title.slug, season, episode]);
 
-  /**
-   * The overlay is only a "finding a source" hint — it must vanish as soon as
-   * the frame loads (onLoad clears it below) and it must never sit on top of a
-   * playing stream. If the server stays silent we switch automatically.
-   */
-  useEffect(() => {
-    setStarted(false);
-    loadedRef.current = false;
-    const quick = window.setTimeout(() => setStarted(true), 1800);
-    /* only recover when the frame never even loaded — never interrupt a live stream */
-    const silent = window.setTimeout(() => {
-      if (!loadedRef.current) fallbackServer();
-    }, 7000);
-    return () => {
-      window.clearTimeout(quick);
-      window.clearTimeout(silent);
-    };
-  }, [src, fallbackServer]);
-
-  /* keyboard: only the things the embed cannot do itself */
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       const el = event.target as HTMLElement | null;
@@ -334,37 +277,24 @@ export function Player({
     return () => window.removeEventListener("keydown", onKey);
   }, [menu, router, hasNext]);
 
-  const changeQuality = (next: Quality) => {
-    setQuality(next);
-    qualityInitial.current = next;
-    setMenu(null);
-    ls.set("nf.quality", next);
-    toast(`Quality · ${next.toUpperCase()}`);
-  };
-
   const changeServer = (next: ServerId) => {
     setServer(next);
-    setMenu(null);
     triedFallback.current = false;
     ls.set("nf.server", next);
     ls.set("nf.server.best", next);
     toast(`Server · ${SERVERS.find((s) => s.id === next)?.label}`);
-  };
-
-  const changeSubs = (next: string) => {
-    setSubtitles(next);
     setMenu(null);
-    ls.set("nf.subs", next);
-    toast(next === "off" ? "Subtitles off" : `Subtitles · ${SUBTITLE_LANGS.find((l) => l.id === next)?.label}`);
   };
 
-  const jumpTo = (nextEpisode: number) => {
-    setEpisode(nextEpisode);
+  const changeQuality = (next: Quality) => {
+    setQuality(next);
+    ls.set("nf.quality", next);
+    toast(`Restarting in ${next.toUpperCase()}`);
     setMenu(null);
   };
 
   return (
-    <div className="fixed inset-0 z-[80] overflow-hidden bg-black text-white">
+    <div className="fixed inset-0 overflow-hidden bg-black text-white">
       <iframe
         ref={iframeRef}
         src={src}
@@ -374,222 +304,179 @@ export function Player({
         referrerPolicy="origin"
         onLoad={() => {
           loadedRef.current = true;
-          markServerGood(server);
+          ls.set("nf.server.best", server);
           window.setTimeout(() => setStarted(true), 400);
         }}
         className="absolute inset-0 h-full w-full border-0"
       />
 
-      {/* overlay is click-through except for the bar */}
+      {/* everything here is click-through; only the actual buttons take input */}
       <div className="pointer-events-none absolute inset-0">
-        {/* slim "finding a source" hint — never covers the stream */}
+        {/* loading hint — small, top centre, gone in <2s */}
         <AnimatePresence>
           {!started && (
             <motion.div
-              key="hint"
               initial={{ opacity: 0, y: -6 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -6 }}
-              transition={{ duration: 0.25 }}
-              className="absolute left-1/2 top-3 z-30 -translate-x-1/2"
+              transition={{ duration: 0.22 }}
+              className="absolute left-1/2 top-4 z-30 -translate-x-1/2"
             >
-              <div className="flex items-center gap-2.5 rounded-full border border-white/10 bg-black/70 px-3.5 py-1.5 backdrop-blur-md">
-                <span className="h-3 w-3 animate-spin rounded-full border-[1.5px] border-white/25 border-t-[#e50914]" />
-                <span className="text-[11px] font-medium tracking-wide text-white/75">
-                  Finding a source… ({SERVERS.find((s) => s.id === server)?.label})
-                </span>
+              <div className="flex items-center gap-2 rounded-full border border-white/10 bg-black/65 px-3 py-1.5 backdrop-blur-md">
+                <span className="h-2.5 w-2.5 animate-spin rounded-full border-[1.5px] border-white/25 border-t-[#e50914]" />
+                <span className="text-[11px] font-medium text-white/80">Starting stream…</span>
               </div>
             </motion.div>
           )}
         </AnimatePresence>
 
-        {/* top bar */}
+        {/* top-left: back + title, auto-hiding, small */}
         <AnimatePresence>
           {chrome && (
             <motion.div
-              initial={{ opacity: 0, y: -12 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -12 }}
-              transition={{ duration: 0.2 }}
-              className="pointer-events-auto absolute inset-x-0 top-0 z-20 bg-gradient-to-b from-black/90 via-black/55 to-transparent px-3 pb-12 pt-3 md:px-6"
+              initial={{ opacity: 0, x: -8 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: -8 }}
+              transition={{ duration: 0.18 }}
+              className="absolute left-3 top-3 z-20 flex items-center gap-2 md:left-5 md:top-4"
             >
-              <div className="flex items-center gap-2 md:gap-4">
-                <button
-                  type="button"
-                  onClick={() => router.back()}
-                  aria-label="Back"
-                  className="grid h-9 w-9 shrink-0 place-items-center rounded-full text-white/85 transition hover:bg-white/10 hover:text-white"
-                >
-                  <ArrowLeftIcon width={21} height={21} />
-                </button>
+              <button
+                type="button"
+                onClick={() => router.back()}
+                aria-label="Back"
+                className="pointer-events-auto grid h-10 w-10 place-items-center rounded-full bg-black/55 text-white/90 backdrop-blur-md transition hover:bg-black/75 hover:text-white"
+              >
+                <ArrowLeftIcon width={20} height={20} />
+              </button>
 
-                <Wordmark className="hidden text-xl sm:block" asLink={false} />
-
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-[13px] font-semibold md:text-[15px]">{title.name}</p>
-                  <p className="truncate text-[11px] text-white/55">
-                    {title.kind === "series" ? `S${season} · E${episode}` : `${title.year} · ${title.maturity}`}
-                    {title.anilistId ? " · Anime" : ""}
-                  </p>
-                </div>
-
-                <div className="flex shrink-0 items-center gap-1.5">
-                  {hasNext && (
-                    <button
-                      type="button"
-                      onClick={() => setEpisode((e) => e + 1)}
-                      aria-label="Next episode"
-                      className="grid h-9 w-9 place-items-center rounded-md border border-white/20 text-white/80 transition hover:bg-white/10 hover:text-white"
-                    >
-                      <NextIcon width={16} height={16} />
-                    </button>
-                  )}
-                  <Chip
-                    active={menu === "server"}
-                    onClick={() => setMenu(menu === "server" ? null : "server")}
-                    label={SERVERS.find((s) => s.id === server)?.label ?? "Server"}
-                  />
-                  <Chip
-                    active={menu === "quality"}
-                    onClick={() => setMenu(menu === "quality" ? null : "quality")}
-                    label={quality.toUpperCase()}
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setMenu(menu === "subs" ? null : "subs")}
-                    aria-label="Subtitles"
-                    className={cn(
-                      "grid h-9 w-9 place-items-center rounded-md border transition",
-                      subtitles === "off"
-                        ? "border-white/15 text-white/45 hover:text-white"
-                        : "border-white/35 text-white hover:bg-white/10",
-                    )}
-                  >
-                    <SubtitlesIcon width={16} height={16} />
-                  </button>
-                </div>
+              <div className="pointer-events-none max-w-[46vw] rounded-full bg-black/55 px-3 py-1.5 backdrop-blur-md">
+                <p className="truncate text-[12.5px] font-semibold leading-tight text-white">{title.name}</p>
+                <p className="truncate text-[10.5px] leading-tight text-white/55">
+                  {title.kind === "series" ? `S${season} · E${episode}` : `${title.year} · ${title.maturity}`}
+                </p>
               </div>
-
-              <AnimatePresence>
-                {menu && (
-                  <motion.div
-                    initial={{ opacity: 0, y: -6 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: -6 }}
-                    transition={{ duration: 0.15 }}
-                    className="absolute right-3 top-[58px] w-[250px] overflow-hidden rounded-lg border border-white/10 bg-[#141414]/97 p-1.5 shadow-2xl backdrop-blur-xl md:right-6"
-                  >
-                    {menu === "server" && (
-                      <>
-                        <MenuLabel>Server</MenuLabel>
-                        {SERVERS.map((s) => (
-                          <Row
-                            key={s.id}
-                            active={server === s.id}
-                            title={s.label}
-                            subtitle={s.hint}
-                            onClick={() => changeServer(s.id)}
-                          />
-                        ))}
-                        <Row
-                          title="FebBox token"
-                          subtitle="Unlock 4K cloud sources"
-                          onClick={() => {
-                            const token = window.prompt("Paste your FebBox UI cookie token");
-                            if (!token) return;
-                            ls.set("nf.febbox", token.trim());
-                            post({ type: "CINELITE_SYNC_FEBBOX_TOKEN", token: token.trim() });
-                            toast("FebBox token saved");
-                            setMenu(null);
-                          }}
-                        />
-                      </>
-                    )}
-
-                    {menu === "quality" && (
-                      <>
-                        <MenuLabel>Quality</MenuLabel>
-                        {QUALITIES.map((q) => (
-                          <Row key={q} active={quality === q} title={q.toUpperCase()} onClick={() => changeQuality(q)} />
-                        ))}
-                      </>
-                    )}
-
-                    {menu === "subs" && (
-                      <>
-                        <MenuLabel>Subtitles</MenuLabel>
-                        {SUBTITLE_LANGS.map((l) => (
-                          <Row key={l.id} active={subtitles === l.id} title={l.label} onClick={() => changeSubs(l.id)} />
-                        ))}
-                      </>
-                    )}
-
-                    {menu === "episodes" && currentSeason && (
-                      <>
-                        <MenuLabel>Season {season}</MenuLabel>
-                        <div className="max-h-[260px] overflow-y-auto">
-                          {currentSeason.episodes.map((item) => (
-                            <Row
-                              key={item.number}
-                              active={episode === item.number}
-                              title={`E${item.number} · ${item.name}`}
-                              subtitle={`${item.runtime} min`}
-                              onClick={() => jumpTo(item.number)}
-                            />
-                          ))}
-                        </div>
-                      </>
-                    )}
-                  </motion.div>
-                )}
-              </AnimatePresence>
             </motion.div>
           )}
         </AnimatePresence>
 
-        {/* bottom-right episode picker (kept out of the top bar to stay clean) */}
-        {title.kind === "series" && seasons.length > 0 && (
-          <button
-            type="button"
-            onClick={() => setMenu(menu === "episodes" ? null : "episodes")}
-            className={cn(
-              "pointer-events-auto absolute bottom-5 right-4 z-20 inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[11px] font-medium backdrop-blur transition md:bottom-6 md:right-6",
-              menu === "episodes"
-                ? "border-white/60 bg-white/15 text-white"
-                : "border-white/20 bg-black/45 text-white/75 hover:text-white",
-            )}
-          >
-            Episodes <ChevronDownIcon width={12} height={12} />
-          </button>
-        )}
+        {/* top-right: one menu button for the things the embed can't do */}
+        <AnimatePresence>
+          {chrome && (
+            <motion.div
+              initial={{ opacity: 0, x: 8 }}
+              animate={{ opacity: 1, x: 0 }}
+              exit={{ opacity: 0, x: 8 }}
+              transition={{ duration: 0.18 }}
+              className="absolute right-3 top-3 z-20 flex items-center gap-2 md:right-5 md:top-4"
+            >
+              {hasNext && (
+                <button
+                  type="button"
+                  onClick={() => setEpisode((e) => e + 1)}
+                  aria-label="Next episode"
+                  className="pointer-events-auto grid h-10 w-10 place-items-center rounded-full bg-black/55 text-white/90 backdrop-blur-md transition hover:bg-black/75 hover:text-white"
+                >
+                  <NextIcon width={18} height={18} />
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setMenu(menu === "settings" ? null : "settings")}
+                aria-label="Player options"
+                className={cn(
+                  "pointer-events-auto grid h-10 w-10 place-items-center rounded-full backdrop-blur-md transition",
+                  menu
+                    ? "bg-white text-black"
+                    : "bg-black/55 text-white/90 hover:bg-black/75 hover:text-white",
+                )}
+              >
+                <SparkIcon width={18} height={18} />
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* options panel */}
+        <AnimatePresence>
+          {menu === "settings" && (
+            <motion.div
+              initial={{ opacity: 0, y: -6, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -6, scale: 0.98 }}
+              transition={{ duration: 0.16 }}
+              className="pointer-events-auto absolute right-3 top-16 z-30 w-[268px] overflow-hidden rounded-xl border border-white/10 bg-[#141414]/97 p-1.5 shadow-2xl backdrop-blur-xl md:right-5"
+            >
+              <p className="px-2.5 pb-1 pt-1.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-white/40">
+                Server
+              </p>
+              {SERVERS.map((item) => (
+                <Row
+                  key={item.id}
+                  active={server === item.id}
+                  title={item.label}
+                  subtitle={item.hint}
+                  onClick={() => changeServer(item.id)}
+                />
+              ))}
+
+              <p className="mt-1 px-2.5 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-white/40">
+                Default quality
+              </p>
+              {QUALITIES.map((item) => (
+                <Row
+                  key={item}
+                  active={quality === item}
+                  title={item.toUpperCase()}
+                  subtitle={item === quality ? "Reloads the stream in this quality" : undefined}
+                  onClick={() => changeQuality(item)}
+                />
+              ))}
+
+              {title.kind === "series" && currentSeason && (
+                <>
+                  <p className="mt-1 px-2.5 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-white/40">
+                    Season {season}
+                  </p>
+                  <div className="max-h-[180px] overflow-y-auto">
+                    {currentSeason.episodes.map((item) => (
+                      <Row
+                        key={item.number}
+                        active={episode === item.number}
+                        title={`E${item.number} · ${item.name}`}
+                        subtitle={`${item.runtime} min`}
+                        onClick={() => {
+                          setEpisode(item.number);
+                          setMenu(null);
+                        }}
+                      />
+                    ))}
+                  </div>
+                </>
+              )}
+
+              <p className="mt-1 border-t border-white/10 px-2.5 pb-2 pt-2 text-[10.5px] leading-relaxed text-white/35">
+                Subtitles, audio track, quality switching and fullscreen are in the player&apos;s own bar at
+                the bottom.
+              </p>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* first-load wordmark, bottom-left, only before the stream starts */}
+        <AnimatePresence>
+          {!started && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute bottom-5 left-5 z-20 hidden md:block"
+            >
+              <Wordmark className="text-lg opacity-40" asLink={false} />
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     </div>
-  );
-}
-
-function Chip({ label, active, onClick }: { label: string; active?: boolean; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={cn(
-        "inline-flex h-9 items-center gap-1 rounded-md border px-2.5 text-[11px] font-semibold uppercase tracking-wide transition",
-        active
-          ? "border-white/60 bg-white/15 text-white"
-          : "border-white/20 text-white/75 hover:bg-white/10 hover:text-white",
-      )}
-    >
-      {label}
-      <ChevronDownIcon width={11} height={11} />
-    </button>
-  );
-}
-
-function MenuLabel({ children }: { children: React.ReactNode }) {
-  return (
-    <p className="px-2.5 pb-1 pt-1.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-white/40">
-      {children}
-    </p>
   );
 }
 
@@ -617,7 +504,9 @@ function Row({
         {active ? <CheckIcon width={13} height={13} /> : null}
       </span>
       <span className="min-w-0 flex-1">
-        <span className={cn("block truncate text-[13px]", active ? "text-white" : "text-white/80")}>{title}</span>
+        <span className={cn("block truncate text-[13px]", active ? "text-white" : "text-white/80")}>
+          {title}
+        </span>
         {subtitle && <span className="block truncate text-[11px] text-white/40">{subtitle}</span>}
       </span>
     </button>
