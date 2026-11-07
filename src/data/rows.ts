@@ -1,332 +1,187 @@
-import type { Row } from "@/lib/types";
+import type { Genre, Row, Title } from "@/lib/types";
 import { allTitles } from "@/lib/catalog";
 
-export const continueWatching: string[] = [
-  "breaking-bad",
-  "money-heist",
-  "stranger-things",
-  "the-boys",
-  "dark",
-  "squid-game",
-  "peaky-blinders",
-  "narcos",
-];
+/**
+ * Shelves are *derived* from the catalogue, never typed by hand.
+ *
+ * Every row is filled to at least 20 titles (unless the catalogue itself is
+ * smaller than that for the filter), which is what keeps a shelf from ending
+ * after three posters on a wide screen. Rows may share titles with each other
+ * — Netflix does the same — but never repeat inside a single row.
+ */
 
-export const rows: Row[] = [
-  {
-    id: "trending",
-    title: "Trending Now",
-    hint: "Everyone is watching these",
-    slugs: [
-      "squid-game",
-      "wednesday",
-      "the-last-of-us",
-      "oppenheimer",
-      "money-heist",
-      "dune-part-two",
-      "the-boys",
-      "stranger-things",
-      "john-wick-chapter-4",
-      "barbie",
-      "the-batman",
-      "spider-man-across-the-spider-verse",
-    ],
-  },
-  {
-    id: "top10",
-    title: "Top 10 in Pakistan Today",
-    ranked: true,
-    slugs: [],
-  },
-  {
-    id: "originals",
-    title: "NOFLIX Originals",
-    hint: "Only on NOFLIX",
-    slugs: [
-      "stranger-things",
-      "wednesday",
-      "money-heist",
-      "the-witcher",
-      "bridgerton",
-      "dark",
-      "ozark",
-      "narcos",
-      "the-queens-gambit",
-      "arcane",
-      "black-mirror",
-      "the-umbrella-academy",
-      "sex-education",
-      "you",
-      "the-crown",
-      "sacred-games",
-    ],
-  },
-  {
-    id: "because",
-    title: "Because you watched Breaking Bad",
-    slugs: [
-      "peaky-blinders",
-      "ozark",
-      "narcos",
-      "the-godfather",
-      "pulp-fiction",
-      "parasite",
-      "joker",
-      "the-shawshank-redemption",
-      "suits",
-      "sacred-games",
-    ],
-  },
-  {
-    id: "new",
-    title: "New Releases",
-    hint: "Fresh on NOFLIX this month",
-    slugs: [
-      "dune-part-two",
-      "oppenheimer",
-      "barbie",
-      "john-wick-chapter-4",
-      "spider-man-across-the-spider-verse",
-      "the-batman",
-      "everything-everywhere-all-at-once",
-      "avatar-the-way-of-water",
-      "the-last-of-us",
-      "wednesday",
-    ],
-  },
-  {
-    id: "k-drama",
-    title: "K-Dramas & Asian Hits",
-    slugs: ["squid-game", "sacred-games", "arcane", "parasite", "the-witcher", "rick-and-morty"],
-  },
-  {
-    id: "award",
-    title: "Award-Winning Dramas",
-    slugs: [
-      "oppenheimer",
-      "the-crown",
-      "the-queens-gambit",
-      "parasite",
-      "the-shawshank-redemption",
-      "breaking-bad",
-      "gladiator",
-      "everything-everywhere-all-at-once",
-      "titanic",
-      "the-godfather",
-    ],
-  },
-  {
-    id: "action",
-    title: "Action & Adventure",
-    slugs: [
-      "the-dark-knight",
-      "the-batman",
-      "john-wick-chapter-4",
-      "mad-max-fury-road",
-      "avengers-endgame",
-      "gladiator",
-      "the-matrix",
-      "top-gun-maverick",
-      "avatar-the-way-of-water",
-      "spider-man-no-way-home",
-    ],
-  },
-  {
-    id: "scifi",
-    title: "Mind-Bending Sci-Fi",
-    slugs: [
-      "dune-part-two",
-      "interstellar",
-      "inception",
-      "the-matrix",
-      "avatar-the-way-of-water",
-      "dark",
-      "black-mirror",
-      "stranger-things",
-      "arcane",
-      "everything-everywhere-all-at-once",
-    ],
-  },
-  {
-    id: "comedy",
-    title: "Comedy Nights",
-    slugs: [
-      "brooklyn-nine-nine",
-      "the-office",
-      "rick-and-morty",
-      "barbie",
-      "everything-everywhere-all-at-once",
-      "sex-education",
-      "suits",
-      "the-boys",
-    ],
-  },
-  {
-    id: "romance",
-    title: "Romance & Slow Burns",
-    slugs: [
-      "bridgerton",
-      "titanic",
-      "sex-education",
-      "the-crown",
-      "you",
-      "the-queens-gambit",
-      "the-witcher",
-      "sacred-games",
-    ],
-  },
-  {
-    id: "crime",
-    title: "Crime Stories",
-    slugs: [
-      "breaking-bad",
-      "narcos",
-      "peaky-blinders",
-      "ozark",
-      "sacred-games",
-      "the-godfather",
-      "pulp-fiction",
-      "joker",
-      "suits",
-      "the-dark-knight",
-    ],
-  },
-  {
-    id: "fantasy",
-    title: "Fantasy & Magic",
-    slugs: [
-      "house-of-the-dragon",
-      "game-of-thrones",
-      "the-witcher",
-      "arcane",
-      "stranger-things",
-      "wednesday",
-      "the-umbrella-academy",
-      "bridgerton",
-      "dark",
-    ],
-  },
-  {
-    id: "thriller",
-    title: "Late-Night Thrillers",
-    slugs: [
-      "black-mirror",
-      "the-haunting-of-hill-house",
-      "you",
-      "parasite",
-      "joker",
-      "fight-club",
-      "dark",
-      "sacred-games",
-      "the-boys",
-    ],
-  },
-  {
-    id: "sitcoms",
-    title: "Binge-Worthy Sitcoms",
-    slugs: [
-      "the-office",
-      "brooklyn-nine-nine",
-      "rick-and-morty",
-      "sex-education",
-      "suits",
-      "the-umbrella-academy",
-    ],
-  },
-  {
-    id: "new-on-netflix",
-    title: "New on NOFLIX",
-    hint: "Fresh from the pipeline this week",
-    slugs: [
-      "spider-man-brand-new-day",
-      "the-dog-stars",
-      "hope",
-      "resident-evil",
-      "backrooms",
-      "verity",
-      "obsession",
-      "forgotten-island",
-      "nocturne",
-      "dexter-resurrection",
-    ],
-  },
-  {
-    id: "anime-spotlight",
-    title: "Anime Spotlight",
-    hint: "Subbed, dubbed, unmissable",
-    slugs: ["attack-on-titan", "demon-slayer", "arcane", "rick-and-morty"],
-  },
-  {
-    id: "desi-hits",
-    title: "Desi Hits & Beyond",
-    hint: "Streaming from Mumbai to Karachi",
-    slugs: ["3-idiots", "sacred-games", "money-heist", "narcos", "dark"],
-  },
-  {
-    id: "comfort-classics",
-    title: "Comfort Classics",
-    hint: "Press play, feel better",
-    slugs: [
-      "friends",
-      "sherlock",
-      "better-call-saul",
-      "the-walking-dead",
-      "hocus-pocus",
-      "coraline",
-      "the-nightmare-before-christmas",
-      "halloween",
-    ],
-  },
-];
+const MIN_PER_SHELF = 20;
+const WIDE_SHELF = 26;
 
-/** Rows derived from the live catalogue so the shelves never go stale. */
-function score(title: (typeof allTitles)[number]) {
-  return title.rating * 10 + title.match / 4 + (title.year >= 2024 ? 8 : 0);
+const all = allTitles;
+
+const byScore = (a: Title, b: Title) =>
+  b.rating * 10 +
+  b.match / 4 +
+  (b.year >= 2024 ? 8 : 0) +
+  (b.featured ? 6 : 0) +
+  (b.badge ? 3 : 0) -
+  (a.rating * 10 +
+    a.match / 4 +
+    (a.year >= 2024 ? 8 : 0) +
+    (a.featured ? 6 : 0) +
+    (a.badge ? 3 : 0));
+
+const ranked = [...all].sort(byScore);
+const fresh = [...all].sort((a, b) => b.year - a.year || byScore(a, b));
+const topRated = [...all].sort((a, b) => b.rating - a.rating || byScore(a, b));
+const mostWatched = [...all].sort((a, b) => b.match - a.match || byScore(a, b));
+
+/**
+ * Fill a row. `strict` keeps a shelf honest — an Anime row only ever contains
+ * anime, a Drama row only drama — so it stays short rather than lying. Without
+ * it the row is topped up from the highest-rated titles in the catalogue.
+ */
+function fill(pool: Title[], count: number, strict = false): Title[] {
+  const out: Title[] = [];
+  const seen = new Set<string>();
+  const add = (list: Title[]) => {
+    for (const title of list) {
+      if (out.length >= count) return;
+      if (seen.has(title.slug)) continue;
+      seen.add(title.slug);
+      out.push(title);
+    }
+  };
+  add(pool);
+  if (!strict) add(ranked);
+  return out;
 }
 
-const ranked = [...allTitles].sort((a, b) => score(b) - score(a));
-const topRated = [...allTitles].sort((a, b) => b.rating - a.rating);
-const fresh = [...allTitles].sort((a, b) => b.year - a.year);
-const anime = allTitles.filter((t) => t.anime);
-const animeMovies = anime.filter((t) => t.kind === "movie");
+function shelf(
+  id: string,
+  title: string,
+  hint: string,
+  pool: Title[],
+  count = MIN_PER_SHELF,
+  strict = false,
+): Row {
+  return { id, title, hint, slugs: fill(pool, count, strict).map((t) => t.slug) };
+}
 
+const anime = all.filter((t) => Boolean(t.anime));
+const series = all.filter((t) => t.kind === "series");
+const films = all.filter((t) => t.kind === "movie");
+const originals = all.filter((t) => t.original);
+const acclaimed = all.filter((t) => t.rating >= 8);
+
+const desiFavourites = [
+  "3-idiots",
+  "sacred-games",
+  "money-heist",
+  "narcos",
+  "dark",
+  "the-witcher",
+  "squid-game",
+  "parasite",
+  "monk",
+  "friends",
+];
+
+const comfortFavourites = [
+  "friends",
+  "sherlock",
+  "better-call-saul",
+  "modern-family",
+  "brooklyn-nine-nine",
+  "the-office",
+  "hocus-pocus",
+  "coraline",
+  "the-nightmare-before-christmas",
+  "home-alone",
+].filter((slug) => all.some((t) => t.slug === slug));
+
+const bySlugs = (slugs: string[]) =>
+  slugs.map((slug) => all.find((t) => t.slug === slug)).filter((t): t is Title => Boolean(t));
+
+export const rows: Row[] = [
+  shelf("trending", "Trending Now", "Everyone is watching these", ranked, WIDE_SHELF),
+  {
+    id: "top10",
+    title: "Top 10 in Your Region Today",
+    hint: "Updated daily",
+    slugs: [],
+    ranked: true,
+  },
+  shelf("originals", "NOFLIX Originals", "Only here", originals.length >= 12 ? originals : ranked, MIN_PER_SHELF),
+  shelf("new", "New Releases", "Fresh this month", fresh, WIDE_SHELF),
+  shelf("award", "Award Winners", "Critically acclaimed", acclaimed, MIN_PER_SHELF),
+  shelf("popular", "Popular on NOFLIX", "Most watched right now", mostWatched, WIDE_SHELF),
+  shelf("series", "Binge-Worthy Series", "One more episode", series, WIDE_SHELF),
+  shelf("films", "Blockbuster Films", "Big screen, small screen", films, WIDE_SHELF),
+  shelf("anime", "Anime Spotlight", "Subbed, dubbed, unmissable", anime, WIDE_SHELF, true),
+  shelf(
+    "desi",
+    "Desi Hits & Beyond",
+    "Streaming from Mumbai to Karachi",
+    [...bySlugs(desiFavourites), ...all.filter((t) => t.genres.includes("Crime") || t.genres.includes("Drama"))],
+    MIN_PER_SHELF,
+  ),
+  shelf(
+    "comfort",
+    "Comfort Classics",
+    "Press play, feel better",
+    [...bySlugs(comfortFavourites), ...all.filter((t) => t.genres.includes("Comedy") && t.year <= 2016)],
+    MIN_PER_SHELF,
+  ),
+];
+
+/* ------------------------------------------------------------------ *
+ * Genre shelves — only genres that actually have a shelf's worth of
+ * titles, so no row is ever three cards long.
+ * ------------------------------------------------------------------ */
+
+const GENRE_HINTS: Record<string, string> = {
+  Action: "Fights, chases, explosions",
+  Comedy: "Laugh-out-loud picks",
+  Drama: "Stories that stay with you",
+  Thriller: "Keep the lights on",
+  "Sci-Fi": "Worlds beyond ours",
+  Crime: "Follow the evidence",
+  Romance: "Fall for something new",
+  Fantasy: "Myths, magic and monsters",
+  Animation: "Drawn to perfection",
+  Mystery: "Nothing is as it seems",
+  Horror: "Watch between your fingers",
+  Adventure: "Go somewhere far",
+  Family: "For the whole couch",
+  Documentary: "True stories, told well",
+  History: "The past, replayed",
+  War: "On the front line",
+  Western: "Dust, guns and justice",
+  Music: "Turn it up",
+};
+
+const genreRows: Row[] = (Object.keys(GENRE_HINTS) as Genre[])
+  .map((genre) => ({ genre, matches: all.filter((t) => t.genres.includes(genre)) }))
+  .filter((entry) => entry.matches.length >= 16)
+  .sort((a, b) => b.matches.length - a.matches.length)
+  .slice(0, 10)
+  .map(({ genre, matches }) =>
+    shelf(
+      `genre-${genre.toLowerCase().replace(/[^a-z]+/g, "-")}`,
+      genre,
+      GENRE_HINTS[genre],
+      [...matches].sort(byScore),
+      24,
+      true,
+    ),
+  );
+
+/** Rows derived from the live catalogue so the shelves never go stale. */
 export const dynamicRows: Row[] = [
-  {
-    id: "trending-today",
-    title: "Trending Today",
-    hint: "What everyone is watching right now",
-    slugs: ranked.slice(0, 16).map((t) => t.slug),
-  },
-  {
-    id: "top-rated",
-    title: "Top Rated",
-    hint: "The highest rated titles in the catalogue",
-    slugs: topRated.slice(0, 16).map((t) => t.slug),
-  },
-  {
-    id: "new-releases",
-    title: "New Releases",
-    hint: "Fresh additions this month",
-    slugs: fresh.slice(0, 16).map((t) => t.slug),
-  },
-  ...(anime.length >= 4
-    ? [
-        {
-          id: "anime-shelf",
-          title: "Anime",
-          hint: "Subbed and dubbed, straight from Japan",
-          slugs: anime.slice(0, 18).map((t) => t.slug),
-        } as Row,
-      ]
-    : []),
-  ...(animeMovies.length >= 3
-    ? [
-        {
-          id: "anime-films",
-          title: "Anime Films",
-          hint: "Feature-length animation",
-          slugs: animeMovies.slice(0, 14).map((t) => t.slug),
-        } as Row,
-      ]
-    : []),
+  shelf(
+    "trending-today",
+    "Trending Today",
+    "What everyone is watching right now",
+    ranked,
+    WIDE_SHELF,
+  ),
+  shelf("top-rated", "Top Rated", "The highest rated titles in the catalogue", topRated, WIDE_SHELF),
+  ...genreRows,
 ];

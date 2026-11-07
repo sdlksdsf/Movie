@@ -6,10 +6,10 @@ import { AnimatePresence, motion } from "framer-motion";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { Artwork } from "@/components/artwork";
+import { ShelfStrip } from "@/components/shelf-strip";
 import {
   CheckIcon,
   ChevronDownIcon,
-  ChevronLeftIcon,
   ChevronRightIcon,
   PlayIcon,
   PlusIcon,
@@ -22,37 +22,6 @@ import { cn } from "@/lib/cn";
 
 export function Row({ row, priority = false }: { row: RowType; priority?: boolean }) {
   const items = (row.ranked ? topTen() : row.slugs.map(getTitle).filter(Boolean)) as Title[];
-  const scroller = useRef<HTMLDivElement>(null);
-  const [edges, setEdges] = useState({ left: false, right: true });
-
-  const sync = useCallback(() => {
-    const el = scroller.current;
-    if (!el) return;
-    setEdges({
-      left: el.scrollLeft > 8,
-      right: el.scrollLeft + el.clientWidth < el.scrollWidth - 8,
-    });
-  }, []);
-
-  useEffect(() => {
-    sync();
-    const el = scroller.current;
-    if (!el) return;
-    el.addEventListener("scroll", sync, { passive: true });
-    const observer = new ResizeObserver(sync);
-    observer.observe(el);
-    return () => {
-      el.removeEventListener("scroll", sync);
-      observer.disconnect();
-    };
-  }, [sync]);
-
-  const scrollBy = (dir: -1 | 1) => {
-    const el = scroller.current;
-    if (!el) return;
-    el.scrollBy({ left: dir * Math.round(el.clientWidth * 0.86), behavior: "smooth" });
-  };
-
   if (!items.length) return null;
 
   return (
@@ -81,49 +50,17 @@ export function Row({ row, priority = false }: { row: RowType; priority?: boolea
         </Link>
       </div>
 
-      <div className="relative">
-        <button
-          type="button"
-          aria-label="Scroll left"
-          onClick={() => scrollBy(-1)}
-          disabled={!edges.left}
-          className={cn(
-            "row-arrow absolute left-0 top-0 z-20 hidden h-full w-10 -translate-y-1/2 scale-90 items-center justify-center rounded-r bg-black/45 text-white opacity-0 transition duration-300 hover:bg-black/70 disabled:pointer-events-none disabled:opacity-0 md:flex md:w-12",
-            edges.left && "pointer-events-auto",
-          )}
-          style={{ top: "50%" }}
-        >
-          <ChevronLeftIcon width={30} height={30} />
-        </button>
-        <button
-          type="button"
-          aria-label="Scroll right"
-          onClick={() => scrollBy(1)}
-          disabled={!edges.right}
-          className={cn(
-            "row-arrow absolute right-0 top-0 z-20 hidden h-full w-10 -translate-y-1/2 scale-90 items-center justify-center rounded-l bg-black/45 text-white opacity-0 transition duration-300 hover:bg-black/70 disabled:pointer-events-none disabled:opacity-0 md:flex md:w-12",
-            edges.right && "pointer-events-auto",
-          )}
-          style={{ top: "50%" }}
-        >
-          <ChevronRightIcon width={30} height={30} />
-        </button>
-
-        <div
-          ref={scroller}
-          className="no-scrollbar flex snap-x snap-mandatory items-start gap-2 overflow-x-auto scroll-smooth px-4 pb-6 md:px-12"
-        >
-          {items.map((title, i) => (
-            <div key={`${row.id}-${title.slug}`} className="snap-start">
-              <PosterCard
-                title={title}
-                rank={row.ranked ? i + 1 : undefined}
-                priority={priority && i < 4}
-              />
-            </div>
-          ))}
-        </div>
-      </div>
+      <ShelfStrip label={row.title}>
+        {items.map((title, i) => (
+          <div key={`${row.id}-${title.slug}`} className="snap-start">
+            <PosterCard
+              title={title}
+              rank={row.ranked ? i + 1 : undefined}
+              priority={priority && i < 4}
+            />
+          </div>
+        ))}
+      </ShelfStrip>
     </motion.section>
   );
 }
@@ -141,30 +78,6 @@ export function ContinueRow({
 }) {
   const items = slugs.map(getTitle).filter(Boolean) as Title[];
   const { progress } = useStore();
-  const scroller = useRef<HTMLDivElement>(null);
-  const [edges, setEdges] = useState({ left: false, right: true });
-
-  const sync = useCallback(() => {
-    const el = scroller.current;
-    if (!el) return;
-    setEdges({
-      left: el.scrollLeft > 8,
-      right: el.scrollLeft + el.clientWidth < el.scrollWidth - 8,
-    });
-  }, []);
-
-  useEffect(() => {
-    sync();
-    const el = scroller.current;
-    if (!el) return;
-    el.addEventListener("scroll", sync, { passive: true });
-    const observer = new ResizeObserver(sync);
-    observer.observe(el);
-    return () => {
-      el.removeEventListener("scroll", sync);
-      observer.disconnect();
-    };
-  }, [sync]);
 
   if (!items.length) return null;
 
@@ -184,58 +97,27 @@ export function ContinueRow({
           {hint}
         </span>
       </div>
-      <div className="relative">
-        <button
-          type="button"
-          aria-label="Scroll left"
-          onClick={() => scroller.current?.scrollBy({ left: -Math.round((scroller.current?.clientWidth ?? 0) * 0.86), behavior: "smooth" })}
-          disabled={!edges.left}
-          className={cn(
-            "row-arrow absolute left-0 z-20 hidden h-full w-10 items-center justify-center rounded-r bg-black/45 text-white opacity-0 transition hover:bg-black/70 disabled:pointer-events-none disabled:opacity-0 md:flex md:w-12",
-            edges.left && "pointer-events-auto",
-          )}
-          style={{ top: "50%", transform: "translateY(-50%)" }}
-        >
-          <ChevronLeftIcon width={30} height={30} />
-        </button>
-        <button
-          type="button"
-          aria-label="Scroll right"
-          onClick={() => scroller.current?.scrollBy({ left: Math.round((scroller.current?.clientWidth ?? 0) * 0.86), behavior: "smooth" })}
-          disabled={!edges.right}
-          className={cn(
-            "row-arrow absolute right-0 z-20 hidden h-full w-10 items-center justify-center rounded-l bg-black/45 text-white opacity-0 transition hover:bg-black/70 disabled:pointer-events-none disabled:opacity-0 md:flex md:w-12",
-            edges.right && "pointer-events-auto",
-          )}
-          style={{ top: "50%", transform: "translateY(-50%)" }}
-        >
-          <ChevronRightIcon width={30} height={30} />
-        </button>
 
-        <div
-          ref={scroller}
-          className="no-scrollbar flex snap-x snap-mandatory items-start gap-2 overflow-x-auto px-4 pb-6 md:px-12"
-        >
-          {items.map((title) => {
-            const p = progress[title.slug];
-            const percent = p?.percent;
-            const label = p
-              ? title.kind === "series"
-                ? `S${p.season}:E${p.episode}`
-                : `${Math.round(p.percent * 100)}% watched`
-              : undefined;
-            return (
-              <div key={title.slug} className="snap-start">
-                <PosterCard
-                  title={title}
-                  progress={showProgress ? percent : undefined}
-                  progressLabel={showProgress ? label : undefined}
-                />
-              </div>
-            );
-          })}
-        </div>
-      </div>
+      <ShelfStrip label={title}>
+        {items.map((item) => {
+          const p = progress[item.slug];
+          const percent = p?.percent;
+          const label = p
+            ? item.kind === "series"
+              ? `S${p.season}:E${p.episode}`
+              : `${Math.round(p.percent * 100)}% watched`
+            : undefined;
+          return (
+            <div key={item.slug} className="snap-start">
+              <PosterCard
+                title={item}
+                progress={showProgress ? percent : undefined}
+                progressLabel={showProgress ? label : undefined}
+              />
+            </div>
+          );
+        })}
+      </ShelfStrip>
     </motion.section>
   );
 }
