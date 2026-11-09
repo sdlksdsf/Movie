@@ -1,11 +1,11 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { Player } from "@/components/player";
-import { allTitles, getTitle, seasonsFor } from "@/lib/catalog";
+import { getTitle, seasonsFor } from "@/lib/catalog";
+import { seasonsForTmdb } from "@/lib/seasons";
 
-export function generateStaticParams() {
-  return allTitles.map((t) => ({ kind: t.kind, slug: t.slug }));
-}
+/* on demand + hourly: the season list is live TMDB data now */
+export const revalidate = 3600;
 
 export async function generateMetadata({
   params,
@@ -29,8 +29,13 @@ export default async function WatchPage({
   const title = getTitle(slug);
   if (!title) notFound();
 
-  const seasons = seasonsFor(title);
-  const season = Math.min(Math.max(Number(s) || 1, 1), Math.max(seasons.length, 1));
+  /* an episode list built from TMDB beats a generated one every time */
+  const seasons =
+    title.kind === "series"
+      ? await seasonsForTmdb(title.tmdbId, seasonsFor(title))
+      : seasonsFor(title);
+  const wanted = Number(s) || 1;
+  const season = seasons.some((entry) => entry.number === wanted) ? wanted : seasons[0]?.number ?? 1;
   const episodeCount = seasons.find((x) => x.number === season)?.episodes.length ?? 1;
   const episode = Math.min(Math.max(Number(e) || 1, 1), episodeCount);
 

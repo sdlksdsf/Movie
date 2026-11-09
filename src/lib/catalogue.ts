@@ -30,8 +30,12 @@ export type CatalogueEntry = {
   anime?: boolean;
 };
 
-/** How many titles each tab holds once it is fully built. */
-export const CATALOGUE_TARGET = 1000;
+/**
+ * How many titles each tab holds. Raised from 1,000 to 2,500 now that the
+ * builder sweeps several decades per tab instead of one popularity query — the
+ * old plan could only ever surface the same modern hits.
+ */
+export const CATALOGUE_TARGET = 2500;
 
 const ENDPOINT = "https://api.themoviedb.org/3";
 const POSTER = "https://image.tmdb.org/t/p/w342";
@@ -114,6 +118,18 @@ async function tmdb(
 
 type PagePlan = { path: string; kind: "movie" | "series"; params: Record<string, string> };
 
+/** Decades we sweep, so the shelves are not just "popular in the last 18 months". */
+const DECADES = [1950, 1960, 1970, 1980, 1990, 2000, 2010, 2020];
+
+/**
+ * The queries behind one tab.
+ *
+ * One `popularity.desc` sweep can only ever return the same modern hits, which
+ * is why the old 1,000-title catalogue felt small. Each tab now sweeps an
+ * all-time popularity pass *plus* every decade, and — for anime — both series
+ * and films. The builder interleaves them, so the first screen is still the
+ * popular stuff and the rest of the shelf is deep catalogue.
+ */
 function planFor(tab: CatalogueTab): PagePlan[] {
   /* only titles that already exist, with a real audience — an unreleased
      blockbuster looks great on a poster wall but nothing can play it yet, and
@@ -121,41 +137,66 @@ function planFor(tab: CatalogueTab): PagePlan[] {
   const today = new Date().toISOString().slice(0, 10);
   const quality = { sort_by: "popularity.desc", "vote_count.gte": "50" };
 
+  const moviePlan = (extra: Record<string, string> = {}): PagePlan => ({
+    path: "/discover/movie",
+    kind: "movie",
+    params: { ...quality, "primary_release_date.lte": today, ...extra },
+  });
+  const seriesPlan = (extra: Record<string, string> = {}): PagePlan => ({
+    path: "/discover/tv",
+    kind: "series",
+    params: { ...quality, "first_air_date.lte": today, ...extra },
+  });
+
+  const decades = (path: "movie" | "series", extra: Record<string, string> = {}): PagePlan[] =>
+    DECADES.map((decade) => {
+      const from = `${decade}-01-01`;
+      const to = `${decade + 9}-12-31`;
+      return path === "movie"
+        ? moviePlan({
+            "primary_release_date.gte": from,
+            "primary_release_date.lte": to > today ? today : to,
+            ...extra,
+          })
+        : seriesPlan({
+            "first_air_date.gte": from,
+            "first_air_date.lte": to > today ? today : to,
+            ...extra,
+          });
+    });
+
   if (tab === "movie") {
     return [
-      {
-        path: "/discover/movie",
-        kind: "movie",
-        params: { ...quality, "primary_release_date.lte": today },
-      },
+      moviePlan(),
+      moviePlan({ sort_by: "vote_count.desc", "vote_count.gte": "400" }),
+      ...decades("movie"),
     ];
   }
   if (tab === "series") {
     return [
-      {
-        path: "/discover/tv",
-        kind: "series",
-        params: { ...quality, "first_air_date.lte": today },
-      },
+      seriesPlan(),
+      seriesPlan({ sort_by: "vote_count.desc", "vote_count.gte": "300" }),
+      ...decades("series"),
     ];
   }
+
   /* anime: Japanese animation only, series and films interleaved */
-  const animeParams = {
-    ...quality,
-    with_genres: "16",
-    with_origin_country: "JP",
-  };
+  const japan = { with_genres: "16", with_origin_country: "JP" };
   return [
-    { path: "/discover/tv", kind: "series", params: animeParams },
-    { path: "/discover/movie", kind: "movie", params: animeParams },
+    seriesPlan(japan),
+    moviePlan(japan),
+    seriesPlan({ ...japan, sort_by: "vote_count.desc", "vote_count.gte": "200" }),
+    moviePlan({ ...japan, sort_by: "vote_count.desc", "vote_count.gte": "200" }),
+    ...decades("series", japan),
+    ...decades("movie", japan),
   ];
 }
 
 type Cache = { at: number; items: CatalogueEntry[] };
 const memo = new Map<CatalogueTab, Cache>();
 const TTL = 6 * 60 * 60 * 1000;
-/* ~50 pages of 20 is what 1,000 titles costs; leave headroom for gaps */
-const MAX_PAGE = 60;
+/* 2,500 titles across a dozen interleaved sweeps costs ~140 pages of 20 */
+const MAX_PAGE = 220;
 
 /**
  * Build (or reuse) the catalogue for one tab: exactly `CATALOGUE_TARGET`

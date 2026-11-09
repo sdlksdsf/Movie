@@ -908,8 +908,32 @@ export function Player({
                   {currentSeason && (
                     <>
                       <p className="mt-1 px-2.5 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-white/40">
-                        Season {season}
+                        {currentSeason.name && !/^Season \d+$/.test(currentSeason.name)
+                          ? currentSeason.name
+                          : `Season ${season}`}
+                        {seasons.length > 1 ? ` · ${seasons.length} seasons` : ""}
                       </p>
+                      {seasons.length > 1 && (
+                        <div className="mb-1 flex gap-1 overflow-x-auto px-2.5 pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                          {seasons.map((entry) => (
+                            <button
+                              key={entry.number}
+                              type="button"
+                              onClick={() => goTo(entry.number, 1)}
+                              aria-pressed={entry.number === season}
+                              className={
+                                entry.number === season
+                                  ? "shrink-0 rounded border border-white/70 bg-white/15 px-2 py-0.5 text-[11px] font-semibold text-white"
+                                  : "shrink-0 rounded border border-white/10 px-2 py-0.5 text-[11px] text-white/60 transition hover:border-white/40 hover:text-white"
+                              }
+                            >
+                              {entry.name && !/^Season \d+$/.test(entry.name)
+                                ? entry.name
+                                : `S${entry.number}`}
+                            </button>
+                          ))}
+                        </div>
+                      )}
                       <div className="max-h-[190px] overflow-y-auto">
                         {currentSeason.episodes.map((item) => (
                           <Row

@@ -54,7 +54,9 @@ export function formatRuntime(minutes?: number) {
 /** "2 Seasons" / "Film" / "1h 48m" — the compact meta line under a title. */
 export function shortMeta(t: Title) {
   if (t.kind === "movie") return formatRuntime(t.runtime);
-  return t.seasons === 1 ? "Limited Series" : `${t.seasons} Seasons`;
+  const count = t.seasons ?? 1;
+  if (count <= 1) return "Limited Series";
+  return `${count} Seasons`;
 }
 
 export const genres: Genre[] = Array.from(
@@ -229,7 +231,7 @@ function hash(str: string) {
 }
 
 export function seasonsFor(title: Title): Season[] {
-  const count = title.kind === "movie" ? 0 : Math.min(title.seasons ?? 1, 4);
+  const count = title.kind === "movie" ? 0 : Math.min(Math.max(title.seasons ?? 1, 1), 12);
   const seasons: Season[] = [];
   for (let s = 1; s <= count; s++) {
     const base = hash(`${title.slug}-${s}`);
@@ -251,6 +253,7 @@ export function seasonsFor(title: Title): Season[] {
     seasons.push({
       number: s,
       year: title.year + (s - 1),
+      name: `Season ${s}`,
       episodes,
     });
   }

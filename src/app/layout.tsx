@@ -4,6 +4,7 @@ import "@fontsource/anton/400.css";
 import "./globals.css";
 import { StoreProvider } from "@/components/store";
 import { AppShell } from "@/components/app-shell";
+import { BootIntro } from "@/components/boot-intro";
 
 export const metadata: Metadata = {
   title: "NOFLIX — Watch TV Shows Online, Watch Movies Online",
@@ -32,11 +33,13 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <style
           dangerouslySetInnerHTML={{
             __html:
-              "html,body{background:#141414;color:#fff;margin:0;min-height:100%}#boot{position:fixed;inset:0;background:#141414;z-index:9999;transition:opacity .35s ease}",
+              "html,body{background:#141414;color:#fff;margin:0;min-height:100%}#nf-boot{position:fixed;inset:0;background:#000;z-index:9999}",
           }}
         />
       </head>
       <body className="min-h-screen bg-[#141414] text-white antialiased">
+        {/* server-rendered so the title card is the first paint, never a flash */}
+        <BootIntro />
         <StoreProvider>
           <AppShell>{children}</AppShell>
         </StoreProvider>

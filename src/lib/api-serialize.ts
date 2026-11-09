@@ -1,4 +1,5 @@
 import { backdropSrc, posterSrc, seasonsFor, similarTo, shortMeta, getTitle } from "@/lib/catalog";
+import { seasonsForTmdb } from "@/lib/seasons";
 import type { Title } from "@/lib/types";
 
 /** Compact payload used by the JSON API + the live search overlay. */
@@ -27,12 +28,16 @@ export function serializeTitle(t: Title) {
   };
 }
 
-export function serializeTitleDetail(slug: string) {
+export async function serializeTitleDetail(slug: string) {
   const title = getTitle(slug);
   if (!title) return null;
+  const seasons =
+    title.kind === "series"
+      ? await seasonsForTmdb(title.tmdbId, seasonsFor(title))
+      : seasonsFor(title);
   return {
     ...serializeTitle(title),
-    seasons: seasonsFor(title),
+    seasons,
     similar: similarTo(title, 9).map(serializeTitle),
   };
 }

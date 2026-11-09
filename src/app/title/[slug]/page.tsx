@@ -9,17 +9,17 @@ import { PlayIcon } from "@/components/icons";
 import { HeroTrailer } from "@/components/trailer";
 import { EpisodeStill } from "@/components/episode-still";
 import {
-  allTitles,
   formatRuntime,
   getTitle,
   seasonsFor,
-  shortMeta,
   similarTo,
 } from "@/lib/catalog";
+import { seasonsForTmdb } from "@/lib/seasons";
 
-export function generateStaticParams() {
-  return allTitles.map((t) => ({ slug: t.slug }));
-}
+/* Rendered on demand and cached for an hour: the episode list now comes from
+   TMDB, so baking 150 pages at build time would both slow the build down and
+   freeze the season data on the day it was built. */
+export const revalidate = 3600;
 
 export async function generateMetadata({
   params,
@@ -34,12 +34,25 @@ export async function generateMetadata({
   };
 }
 
-export default async function TitlePage({ params }: { params: Promise<{ slug: string }> }) {
+export default async function TitlePage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ slug: string }>;
+  searchParams: Promise<{ s?: string }>;
+}) {
   const { slug } = await params;
+  const { s } = await searchParams;
   const title = getTitle(slug);
   if (!title) notFound();
 
-  const seasons = seasonsFor(title);
+  /* real TMDB seasons/episodes for a series, generated ones only as a fallback */
+  const seasons =
+    title.kind === "series"
+      ? await seasonsForTmdb(title.tmdbId, seasonsFor(title))
+      : seasonsFor(title);
+  const wanted = Number(s) || 1;
+  const active = seasons.find((entry) => entry.number === wanted) ?? seasons[0];
   const alike = similarTo(title, 9);
 
   return (
@@ -74,7 +87,13 @@ export default async function TitlePage({ params }: { params: Promise<{ slug: st
                 <span className="rounded border border-white/40 px-1.5 py-[1px] text-[11px]">
                   {title.maturity}
                 </span>
-                <span>{title.kind === "movie" ? formatRuntime(title.runtime) : shortMeta(title)}</span>
+                <span>
+                  {title.kind === "movie"
+                    ? formatRuntime(title.runtime)
+                    : seasons.length > 1
+                      ? `${seasons.length} Seasons`
+                      : "Limited Series"}
+                </span>
               </div>
               <p className="mt-4 max-w-[640px] text-sm leading-relaxed text-white/75">{title.overview}</p>
               <div className="mt-6 flex flex-wrap items-center gap-3">
@@ -121,25 +140,50 @@ export default async function TitlePage({ params }: { params: Promise<{ slug: st
               </div>
             </div>
 
-            {seasons.length > 0 && (
+            {active && active.episodes.length > 0 && (
               <div className="py-8">
-                <h2 className="mb-4 text-lg font-semibold text-white">Episodes</h2>
+                <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                  <h2 className="text-lg font-semibold text-white">
+                    Episodes{active.name ? ` · ${active.name}` : ""}
+                  </h2>
+                  {seasons.length > 1 && (
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {seasons.map((entry) => (
+                        <Link
+                          key={entry.number}
+                          href={`/title/${title.slug}?s=${entry.number}`}
+                          aria-current={entry.number === active.number ? "true" : undefined}
+                          className={
+                            entry.number === active.number
+                              ? "rounded border border-white/70 bg-white/15 px-2.5 py-1 text-[12px] font-semibold text-white"
+                              : "rounded border border-white/10 px-2.5 py-1 text-[12px] text-white/60 transition hover:border-white/40 hover:text-white"
+                          }
+                        >
+                          {entry.name && !/^Season \d+$/.test(entry.name)
+                            ? entry.name
+                            : `S${entry.number}`}
+                        </Link>
+                      ))}
+                    </div>
+                  )}
+                </div>
                 <div className="grid gap-3 md:grid-cols-2">
-                  {seasons[0].episodes.map((ep) => (
+                  {active.episodes.map((ep) => (
                     <Link
                       key={ep.number}
-                      href={`/watch/series/${title.slug}?s=1&e=${ep.number}`}
+                      href={`/watch/series/${title.slug}?s=${active.number}&e=${ep.number}`}
                       className="group flex items-center gap-4 rounded-md border border-white/5 bg-white/[0.02] p-3 transition hover:border-white/20 hover:bg-white/[0.05]"
                     >
                       <span className="w-4 text-center text-sm text-white/40">{ep.number}</span>
                       <span className="relative h-12 w-20 shrink-0 overflow-hidden rounded bg-[#222]">
                         <EpisodeStill
                           tmdbId={title.tmdbId}
-                          season={seasons[0].number}
+                          season={active.number}
                           episode={ep.number}
                           slug={title.slug}
                           accent={title.accent}
                           sizes="140px"
+                          still={ep.still}
                         />
                       </span>
                       <span className="min-w-0 flex-1">

@@ -1,9 +1,7 @@
 "use client";
 
 import { AnimatePresence, motion } from "framer-motion";
-import { usePathname } from "next/navigation";
 import { useEffect } from "react";
-import { Intro } from "@/components/intro";
 import { ProfileGate } from "@/components/profile-gate";
 import { TitleModal } from "@/components/title-modal";
 import { SearchOverlay } from "@/components/search-overlay";
@@ -12,15 +10,7 @@ import { CloudSync } from "@/components/cloud-sync";
 import { useStore } from "@/components/store";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
-  const { hydrated, profile, setProfile, splash, setSplash, toasts } = useStore();
-  const pathname = usePathname();
-  const onPlayer = Boolean(pathname && (pathname.startsWith("/watch") || pathname.startsWith("/play")));
-
-  /* never sit a title card in front of a stream the user just asked for */
-  useEffect(() => {
-    if (onPlayer && splash) setSplash(false);
-  }, [onPlayer, splash, setSplash]);
-
+  const { hydrated, profile, setProfile, toasts } = useStore();
   return (
     <>
       {children}
@@ -30,16 +20,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <AnimatePresence>
         {hydrated && !profile && (
           <ProfileGate
-            onPick={(picked) => {
-              setProfile(picked);
-              setSplash(true);
-            }}
+            onPick={(picked) => setProfile(picked)}
           />
         )}
-      </AnimatePresence>
-
-      <AnimatePresence>
-        {splash && !onPlayer && <Intro onDone={() => setSplash(false)} />}
       </AnimatePresence>
 
       <SoundNotice />
