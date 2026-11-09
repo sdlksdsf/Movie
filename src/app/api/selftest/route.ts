@@ -18,6 +18,9 @@ export const maxDuration = 60;
 const UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
 
+const printable = (value: string) =>
+  value.replace(/[^\x20-\x7E]+/g, " ").replace(/\s+/g, " ").trim().slice(0, 160);
+
 type Step = {
   label: string;
   status?: number;
@@ -49,9 +52,9 @@ async function direct(
       contentType: res.headers.get("content-type"),
       cors: res.headers.get("access-control-allow-origin"),
       bytes: buffer.length,
-      head: res.ok ? sniff : buffer.subarray(0, 260).toString("utf8").replace(/\s+/g, " "),
+      head: printable(res.ok ? sniff : buffer.subarray(0, 300).toString("utf8")),
       /* 0x47 = MPEG-TS sync byte; "ftyp"/"styp" = fMP4 */
-      body: first[0] === 0x47 || /ftyp|styp|moof/.test(sniff) ? "video" : sniff.slice(0, 24),
+      body: first[0] === 0x47 || /ftyp|styp|moof/.test(sniff) ? "video" : printable(sniff).slice(0, 40),
     };
   } catch (error) {
     return { label: "direct", error: String(error).slice(0, 120) };
@@ -75,9 +78,9 @@ async function relay(url: string, referer: string): Promise<Step & { body?: stri
       status: res.status,
       contentType: res.headers.get("content-type"),
       bytes: buffer.length,
-      head: text.slice(0, 48),
+      head: printable(text.slice(0, 120)),
       uris: manifest ? text.split("\n").filter((line) => line && !line.startsWith("#")).length : 0,
-      body: manifest ? "manifest" : buffer[0] === 0x47 || /ftyp|styp|moof/.test(text.slice(0, 64)) ? "video" : text.slice(0, 24),
+      body: manifest ? "manifest" : buffer[0] === 0x47 || /ftyp|styp|moof/.test(text.slice(0, 64)) ? "video" : printable(text).slice(0, 40),
       text: manifest ? text : undefined,
     };
   } catch (error) {

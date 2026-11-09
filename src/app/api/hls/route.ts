@@ -82,6 +82,21 @@ async function sniff(upstream: Response): Promise<Sniffed> {
 }
 
 /**
+ * `bytes=START-END?` -> numbers. Anything exotic (multi-range, suffix ranges)
+ * comes back null and is simply forwarded untouched.
+ */
+function parseRange(header: string): { start: number; end: number | null } | null {
+  const match = /^bytes=(\d+)-(\d*)$/i.exec(header.trim());
+  if (!match) return null;
+  const start = Number(match[1]);
+  const end = match[2] ? Number(match[2]) : null;
+  if (!Number.isFinite(start) || (end !== null && end < start)) return null;
+  return { start, end };
+}
+
+const MAX_SLICE_BYTES = 48 * 1024 * 1024;
+
+/**
  * GET /api/hls?u=<url>&r=<referer>&e=<expiry>&s=<signature>
  *
  * A tiny, signed HLS proxy: it replays the Referer/Origin a CDN expects,
@@ -114,18 +129,18 @@ export async function GET(request: Request) {
   }
 
   const range = request.headers.get("range");
-  const headers: Record<string, string> = {
+  const base: Record<string, string> = {
     "user-agent": UA,
     referer,
     accept: "*/*",
     "accept-language": "en-US,en;q=0.9",
   };
   try {
-    headers.origin = new URL(referer).origin;
+    base.origin = new URL(referer).origin;
   } catch {
     /* referer already validated */
   }
-  if (range) headers.range = range;
+  const headers = range ? { ...base, range } : base;
 
   let upstream: Response;
   try {
@@ -136,6 +151,53 @@ export async function GET(request: Request) {
     });
   } catch {
     return new Response("upstream unreachable", { status: 502 });
+  }
+
+  /*
+   * Several provider CDNs reject a *ranged* request for a media object that
+   * they serve happily in full - Safari's native HLS player and every
+   * `<video src>` send `Range: bytes=0-` on the first byte and get a 403, which
+   * looks exactly like "the stream is dead". Retry without the header and slice
+   * the object here instead, so the relay always answers with real bytes.
+   */
+  if (range && !upstream.ok && upstream.status !== 206) {
+    const wanted = parseRange(range);
+    void upstream.body?.cancel().catch(() => {});
+    let bare: Response | null = null;
+    try {
+      bare = await fetch(url.toString(), {
+        headers: base,
+        cache: "no-store",
+        redirect: "follow",
+      });
+    } catch {
+      bare = null;
+    }
+    if (bare?.ok) {
+      const declared = Number(bare.headers.get("content-length") ?? 0);
+      if (declared > MAX_SLICE_BYTES) {
+        return new Response("range unsupported upstream", { status: 502 });
+      }
+      const buffer = new Uint8Array(await bare.arrayBuffer());
+      if (buffer.byteLength > MAX_SLICE_BYTES) {
+        return new Response("range unsupported upstream", { status: 502 });
+      }
+      const start = wanted ? Math.min(wanted.start, Math.max(buffer.byteLength - 1, 0)) : 0;
+      const end = wanted?.end ?? buffer.byteLength - 1;
+      const stop = Math.min(end, buffer.byteLength - 1);
+      const slice = buffer.subarray(start, stop + 1);
+      return new Response(slice, {
+        status: 206,
+        headers: {
+          "content-type": (bare.headers.get("content-type") ?? "application/octet-stream").toLowerCase(),
+          "content-range": `bytes ${start}-${stop}/${buffer.byteLength}`,
+          "content-length": String(slice.byteLength),
+          "accept-ranges": "bytes",
+          "cache-control": "public, max-age=600, s-maxage=3600",
+          "access-control-allow-origin": "*",
+        },
+      });
+    }
   }
 
   if (!upstream.ok && upstream.status !== 206) {
