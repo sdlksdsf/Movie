@@ -49,7 +49,7 @@ async function direct(
       contentType: res.headers.get("content-type"),
       cors: res.headers.get("access-control-allow-origin"),
       bytes: buffer.length,
-      head: sniff,
+      head: res.ok ? sniff : buffer.subarray(0, 260).toString("utf8").replace(/\s+/g, " "),
       /* 0x47 = MPEG-TS sync byte; "ftyp"/"styp" = fMP4 */
       body: first[0] === 0x47 || /ftyp|styp|moof/.test(sniff) ? "video" : sniff.slice(0, 24),
     };
@@ -148,6 +148,17 @@ export async function GET(request: Request) {
               "https://noflix-taupe.vercel.app/",
               { ...browserHeaders, range: "bytes=0-" },
               "segment browser+range",
+            ),
+          );
+          steps.push(
+            await direct(segmentUrl, undefined, { range: "bytes=0-" }, "segment range only"),
+          );
+          steps.push(
+            await direct(
+              segmentUrl,
+              "https://noflix-taupe.vercel.app/",
+              browserHeaders,
+              "segment browser no range",
             ),
           );
         }
