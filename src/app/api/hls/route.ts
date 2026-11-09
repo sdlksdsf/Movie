@@ -208,7 +208,12 @@ export async function GET(request: Request) {
     const wanted = parseRange(range);
     const declared = Number(upstream.headers.get("content-length") ?? 0);
     if (wanted && declared > 0 && declared <= MAX_SLICE_BYTES) {
-      const buffer = new Uint8Array(await upstream.arrayBuffer());
+      let buffer: Uint8Array;
+      try {
+        buffer = new Uint8Array(await upstream.arrayBuffer());
+      } catch {
+        return new Response("upstream unreadable", { status: 502 });
+      }
       const head = new TextDecoder().decode(buffer.subarray(0, 16)).trimStart();
       if (!head.startsWith(MANIFEST_MAGIC)) {
         const start = Math.min(wanted.start, Math.max(buffer.byteLength - 1, 0));
