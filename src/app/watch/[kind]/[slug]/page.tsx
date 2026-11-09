@@ -1,12 +1,11 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { Player } from "@/components/player";
-import { allTitles, getTitle, seasonsFor } from "@/lib/catalog";
+import { getTitle, seasonsFor } from "@/lib/catalog";
 import { seasonsForTmdb } from "@/lib/seasons";
 
-export function generateStaticParams() {
-  return allTitles.map((t) => ({ kind: t.kind, slug: t.slug }));
-}
+/* on demand + hourly: the season list is live TMDB data now */
+export const revalidate = 3600;
 
 export async function generateMetadata({
   params,

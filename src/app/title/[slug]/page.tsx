@@ -9,7 +9,6 @@ import { PlayIcon } from "@/components/icons";
 import { HeroTrailer } from "@/components/trailer";
 import { EpisodeStill } from "@/components/episode-still";
 import {
-  allTitles,
   formatRuntime,
   getTitle,
   seasonsFor,
@@ -18,9 +17,10 @@ import {
 } from "@/lib/catalog";
 import { seasonsForTmdb } from "@/lib/seasons";
 
-export function generateStaticParams() {
-  return allTitles.map((t) => ({ slug: t.slug }));
-}
+/* Rendered on demand and cached for an hour: the episode list now comes from
+   TMDB, so baking 150 pages at build time would both slow the build down and
+   freeze the season data on the day it was built. */
+export const revalidate = 3600;
 
 export async function generateMetadata({
   params,
