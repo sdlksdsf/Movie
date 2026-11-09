@@ -380,9 +380,14 @@ export async function resolveStreams(input: ResolveInput): Promise<{
   const results = settled.filter((result): result is StreamResult => Boolean(result));
   if (!results.length) return { sources: [], provider: null, expiresIn: 0 };
 
-  /* One flat list across providers: best quality first, and anything h265-only
-     after the files every browser can decode. */
+  /* One flat list across providers. HLS first, because a playlist reached
+     through /api/hls is the one transport we know plays from a datacenter IP
+     (the MP4 CDNs hand those back a 428/429) and hls.js still gives a real
+     quality menu from it. Then anything a browser can decode, then best
+     quality. */
   const sources = dedupe(results.flatMap((result) => result.sources)).sort((a, b) => {
+    const transport = (a.type === "hls" ? 0 : 1) - (b.type === "hls" ? 0 : 1);
+    if (transport !== 0) return transport;
     const codec = (a.codec === "hevc" ? 1 : 0) - (b.codec === "hevc" ? 1 : 0);
     if (codec !== 0) return codec;
     return qualityRank(b.quality) - qualityRank(a.quality);
