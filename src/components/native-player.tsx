@@ -15,11 +15,29 @@ import {
 import { cn } from "@/lib/cn";
 
 export type NativeSource = {
+  /** the CDN itself — played straight from the viewer's IP */
   url: string;
+  /** signed same-origin relay, used only if the CDN refuses the direct hit */
+  proxy?: string;
   type: "hls" | "mp4";
   quality?: string;
+  codec?: "h264" | "hevc" | "unknown";
   label: string;
 };
+
+/** Can this browser decode HEVC? Plenty of provider files are h265-only. */
+function hevcSupported() {
+  if (typeof document === "undefined") return true;
+  try {
+    const probe = document.createElement("video");
+    return (
+      probe.canPlayType('video/mp4; codecs="hvc1.1.6.L93.B0"') !== "" ||
+      probe.canPlayType('video/mp4; codecs="hev1.1.6.L93.B0"') !== ""
+    );
+  } catch {
+    return false;
+  }
+}
 
 const fmt = (value: number) => {
   if (!Number.isFinite(value) || value < 0) return "0:00";
@@ -60,12 +78,21 @@ export function NativePlayer({
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const hlsRef = useRef<import("hls.js").default | null>(null);
+  const videoEl = useCallback((node: HTMLVideoElement | null) => {
+    videoRef.current = node;
+    /* no `crossOrigin`: provider CDNs rarely send CORS headers, and a plain
+       media load plays opaquely. And no Referer, which is exactly what their
+       hotlink checks look at — React's typings just don't know the attribute. */
+    if (node) node.setAttribute("referrerpolicy", "no-referrer");
+  }, []);
   const shellRef = useRef<HTMLDivElement>(null);
   const hideTimer = useRef<number | null>(null);
   const lastSaved = useRef(0);
   const recovery = useRef({ network: 0, media: 0, escalated: false });
 
   const [sourceIndex, setSourceIndex] = useState(0);
+  /** 0 = straight to the CDN, 1 = through our relay */
+  const [attempt, setAttempt] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [waiting, setWaiting] = useState(true);
   const [time, setTime] = useState(0);
@@ -81,14 +108,32 @@ export function NativePlayer({
   const [caption, setCaption] = useState(-1);
   const [failed, setFailed] = useState(false);
 
-  const sourceKey = useMemo(() => sources.map((entry) => entry.url).join("|"), [sources]);
+  /* drop h265-only files when this browser cannot decode them: a black screen
+     is worse than starting on a lower resolution */
+  const playable = useMemo(() => {
+    const supportsHevc = hevcSupported();
+    const keep = sources.filter((entry) => supportsHevc || entry.codec !== "hevc");
+    return keep.length ? keep : supportsHevc ? sources : [];
+  }, [sources]);
+
+  const sourceKey = useMemo(
+    () => playable.map((entry) => `${entry.url}|${entry.proxy ?? ""}`).join("~"),
+    [playable],
+  );
+
+  /* a new title means a new source list: start again from the first one */
+  useEffect(() => {
+    setSourceIndex(0);
+    setAttempt(0);
+  }, [sourceKey]);
 
   /* ------------------------------------------------------------- transport */
 
   useEffect(() => {
     const video = videoRef.current;
-    const source = sources[sourceIndex];
-    if (!video || !source) return;
+    const source = playable[sourceIndex];
+    const url = source ? (attempt === 1 ? (source.proxy ?? source.url) : source.url) : null;
+    if (!video || !source || !url) return;
 
     let hls: import("hls.js").default | null = null;
     let cancelled = false;
@@ -124,16 +169,24 @@ export function NativePlayer({
     const stalls: { src?: number } = {};
     let mediaErrorHandler: (() => void) | null = null;
 
-    /** give up on this source: try the next, then hand the page to the embeds */
+    /**
+     * Give up on this attempt: the CDN refused, so relay it; the relay refused,
+     * so move to the next source; nothing left, so hand the page to the embeds.
+     */
     const escalate = () => {
       if (recovery.current.escalated) return;
       recovery.current.escalated = true;
-      if (sourceIndex + 1 < sources.length) {
-        setSourceIndex((index) => index + 1);
-      } else {
-        setFailed(true);
-        onError?.();
+      if (attempt === 0 && source.proxy) {
+        setAttempt(1);
+        return;
       }
+      if (sourceIndex + 1 < playable.length) {
+        setSourceIndex((index) => index + 1);
+        setAttempt(0);
+        return;
+      }
+      setFailed(true);
+      onError?.();
     };
 
     const bootstrap = async () => {
@@ -150,7 +203,7 @@ export function NativePlayer({
           () => window.clearTimeout(stalls.src),
           { once: true },
         );
-        video.src = source.url;
+        video.src = url;
         video.addEventListener("loadedmetadata", nudgeResume, { once: true });
         startPlayback();
         return;
@@ -161,7 +214,7 @@ export function NativePlayer({
       if (cancelled) return;
 
       if (!Hls.isSupported()) {
-        video.src = source.url;
+        video.src = url;
         startPlayback();
         return;
       }
@@ -175,12 +228,16 @@ export function NativePlayer({
         manifestLoadingTimeOut: 12_000,
         levelLoadingTimeOut: 12_000,
         fragLoadingTimeOut: 20_000,
+        /* the CDNs hotlink on Referer; a browser never lets us clear it on a
+           same-origin XHR, but it does honour `referrerPolicy` */
+        fetchSetup: (context: { url: string }, initParams: RequestInit) =>
+          new Request(context.url, { ...initParams, referrerPolicy: "no-referrer", credentials: "omit" }),
       });
 
       hlsRef.current = hls;
       hls.attachMedia(video);
 
-      hls.on(Hls.Events.MEDIA_ATTACHED, () => hls?.loadSource(source.url));
+      hls.on(Hls.Events.MEDIA_ATTACHED, () => hls?.loadSource(url));
       hls.on(Hls.Events.MANIFEST_PARSED, (_event: unknown, data: { levels: Array<{ height?: number; bitrate?: number }> }) => {
         setLevels(
           data.levels.map((entry, index) => ({
@@ -243,7 +300,7 @@ export function NativePlayer({
       video.load();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sourceKey, sourceIndex]);
+  }, [sourceKey, sourceIndex, attempt]);
 
   /* --------------------------------------------------------------- listeners */
 
@@ -423,10 +480,9 @@ export function NativePlayer({
       className="group absolute inset-0 z-20 bg-black text-white"
     >
       <video
-        ref={videoRef}
+        ref={videoEl}
         playsInline
         preload="metadata"
-        crossOrigin="anonymous"
         onClick={() => {
           toggle();
           poke();
@@ -560,25 +616,27 @@ export function NativePlayer({
 
             <div className="ml-auto flex items-center gap-1">
               {/* source switch */}
-              {sources.length > 1 && (
+              {playable.length > 1 && (
                 <MenuButton
                   label="Source"
                   active={menu === "source"}
                   onClick={() => setMenu(menu === "source" ? null : "source")}
-                  text={sources[sourceIndex]?.label ?? "Source"}
+                  text={playable[sourceIndex]?.label ?? "Source"}
                   chrome={chrome}
                   panel={
                     <Panel>
-                      {sources.map((entry, index) => (
+                      {playable.map((entry, index) => (
                         <Option
                           key={`${entry.url}-${index}`}
                           active={index === sourceIndex}
                           onClick={() => {
                             setSourceIndex(index);
+                            setAttempt(0);
                             setMenu(null);
                           }}
                         >
                           {entry.label} {entry.quality ? `· ${entry.quality}` : ""}
+                          {entry.codec === "hevc" ? " · HDR/HEVC" : ""}
                         </Option>
                       ))}
                     </Panel>

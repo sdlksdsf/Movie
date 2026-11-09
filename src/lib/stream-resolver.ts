@@ -11,15 +11,31 @@
  * signed, so playback works from the browser without exposing these hosts.
  */
 
+import { TMDB_API_KEY, isBearerToken } from "@/lib/tmdb-key";
+
+export type StreamCodec = "h264" | "hevc" | "unknown";
+
 export type StreamSource = {
   provider: string;
   label: string;
   quality?: string;
   url: string;
   type: "hls" | "mp4";
-  /** the Referer this CDN expects — the proxy replays it */
+  codec: StreamCodec;
+  /** the Referer this CDN expects — only the proxy path replays it */
   referer: string;
 };
+
+/**
+ * Best guess at the codec from the URL alone. Provider CDNs are loud about it
+ * (`/h265/`, `hevc`, `_h264`), and getting it wrong only costs an ordering
+ * preference — the browser is the final judge.
+ */
+function codecFor(url: string): StreamCodec {
+  if (/h\.?265|hevc/i.test(url)) return "hevc";
+  if (/h\.?264|avc1/i.test(url)) return "h264";
+  return "unknown";
+}
 
 export type StreamResult = {
   provider: string;
@@ -125,6 +141,7 @@ async function vidlink(
       quality: /^\d+$/.test(quality) ? `${quality}p` : quality === "4k" ? "4K" : quality,
       url,
       type: /\.mp4(\?|$)/i.test(url) ? "mp4" : "hls",
+      codec: codecFor(url),
       referer: "https://vidlink.pro/",
     });
   }
@@ -137,6 +154,7 @@ async function vidlink(
       quality: "auto",
       url: playlist,
       type: /\.mp4(\?|$)/i.test(playlist) ? "mp4" : "hls",
+      codec: codecFor(playlist),
       referer: "https://vidlink.pro/",
     });
   }
@@ -149,6 +167,7 @@ async function vidlink(
       quality: entry.quality ?? "auto",
       url: entry.url,
       type: /\.mp4(\?|$)/i.test(entry.url) ? "mp4" : "hls",
+      codec: codecFor(entry.url),
       referer: "https://vidlink.pro/",
     });
   }
@@ -221,6 +240,7 @@ async function vixsrc(
         quality: bestVariant(manifest) ?? "auto",
         url: master,
         type: "hls",
+        codec: "unknown",
         referer: apiUrl,
       },
     ],
@@ -228,6 +248,86 @@ async function vixsrc(
       60,
       Math.floor(((Number.isFinite(expiresAt) ? expiresAt : Date.now() + 3_600_000) - Date.now()) / 1000),
     ),
+  };
+}
+
+/* ----------------------------------------------------------------- vaplayer */
+
+const VAPLAYER_ORIGIN = "https://nextgencloudfabric.com";
+
+/** TMDB answers with the IMDb id, which is what VaPlayer indexes on. */
+async function imdbIdFor(
+  tmdbId: number,
+  kind: "movie" | "series",
+  signal: AbortSignal,
+): Promise<string | null> {
+  if (!TMDB_API_KEY) return null;
+  const url = new URL(
+    `https://api.themoviedb.org/3/${kind === "series" ? "tv" : "movie"}/${tmdbId}/external_ids`,
+  );
+  const headers: Record<string, string> = { accept: "application/json" };
+  if (isBearerToken(TMDB_API_KEY)) headers.authorization = `Bearer ${TMDB_API_KEY}`;
+  else url.searchParams.set("api_key", TMDB_API_KEY);
+
+  const data = await json<{ imdb_id?: string | null }>(url.toString(), headers, signal);
+  return data?.imdb_id && data.imdb_id.startsWith("tt") ? data.imdb_id : null;
+}
+
+/**
+ * vaplayer → one request per IMDb id, straight back to HLS masters. Different
+ * CDN and different catalogue to vidlink, which is exactly why it is here: when
+ * vidlink only has h265 files, these are usually h264.
+ */
+async function vaplayer(
+  tmdbId: number,
+  kind: "movie" | "series",
+  season: number,
+  episode: number,
+): Promise<StreamResult | null> {
+  const result = await timed(async (signal) => {
+    const imdb = await imdbIdFor(tmdbId, kind, signal);
+    if (!imdb) return null;
+
+    const type = kind === "series" ? "tv" : "movie";
+    const params = new URLSearchParams({ imdb, type });
+    if (kind === "series") {
+      params.set("season", String(season));
+      params.set("episode", String(episode));
+    }
+    const referer =
+      kind === "series"
+        ? `${VAPLAYER_ORIGIN}/embed/tv/${imdb}/${season}/${episode}`
+        : `${VAPLAYER_ORIGIN}/embed/movie/${imdb}`;
+
+    const data = await json<{ data?: { stream_urls?: string[] } }>(
+      `https://streamdata.vaplayer.ru/api.php?${params.toString()}`,
+      {
+        "user-agent": UA,
+        accept: "application/json, text/plain, */*",
+        referer,
+        origin: VAPLAYER_ORIGIN,
+      },
+      signal,
+    );
+    return data?.data?.stream_urls ?? null;
+  });
+
+  const urls = (result ?? []).filter(isHttp);
+  if (!urls.length) return null;
+
+  return {
+    provider: "vaplayer",
+    sources: urls.map((url, index) => ({
+      provider: "vaplayer",
+      /* each URL is a complete adaptive master, not a fixed quality */
+      label: urls.length > 1 ? `VaPlayer ${index + 1}` : "VaPlayer",
+      quality: "auto",
+      url,
+      type: /\.mp4(\?|$)/i.test(url) ? "mp4" : "hls",
+      codec: codecFor(url),
+      referer: `${VAPLAYER_ORIGIN}/`,
+    })),
+    expiresIn: 3600,
   };
 }
 
@@ -258,8 +358,8 @@ export type ResolveInput = {
 };
 
 /**
- * Ask every provider in parallel and return the first that produced something,
- * with the rest kept as alternatives the player can switch to without a reload.
+ * Ask every provider in parallel and return everything that answered, as one
+ * ranked list the player can switch between without a single reload.
  */
 export async function resolveStreams(input: ResolveInput): Promise<{
   sources: StreamSource[];
@@ -271,15 +371,23 @@ export async function resolveStreams(input: ResolveInput): Promise<{
     return { sources: [], provider: null, expiresIn: 0 };
   }
 
-  const [a, b] = await Promise.all([
+  const settled = await Promise.all([
     vidlink(tmdbId, kind, season, episode),
     vixsrc(tmdbId, kind, season, episode),
+    vaplayer(tmdbId, kind, season, episode),
   ]);
 
-  const results = [a, b].filter((result): result is StreamResult => Boolean(result));
+  const results = settled.filter((result): result is StreamResult => Boolean(result));
   if (!results.length) return { sources: [], provider: null, expiresIn: 0 };
 
-  const sources = dedupe(results.flatMap((result) => result.sources));
+  /* One flat list across providers: best quality first, and anything h265-only
+     after the files every browser can decode. */
+  const sources = dedupe(results.flatMap((result) => result.sources)).sort((a, b) => {
+    const codec = (a.codec === "hevc" ? 1 : 0) - (b.codec === "hevc" ? 1 : 0);
+    if (codec !== 0) return codec;
+    return qualityRank(b.quality) - qualityRank(a.quality);
+  });
+
   return {
     sources,
     provider: results[0].provider,
@@ -294,6 +402,8 @@ const ALLOWED_REFERERS = [
   "vodvidl.site",
   "hakunaymatata.com",
   "storm.vodvidl.site",
+  "vaplayer.ru",
+  "nextgencloudfabric.com",
 ];
 
 export function refererAllowed(referer: string) {
