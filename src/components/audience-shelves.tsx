@@ -72,7 +72,8 @@ export function AudienceShelves() {
   const kids = Boolean(profile?.kids);
   const level = profile?.maturity ?? "";
   /* R-rated needs a 16+ profile, 18+ needs the All profile, kids see neither */
-  const matureOk = !kids && (level === "16" || level === "all");
+  /* signed-out visitors have no age on file: they get the general R row */
+  const matureOk = !kids && (level === "" || level === "16" || level === "all");
   /*
    * 18+ shelf: needs a saved profile pinned to "All" maturity *and* a switch the
    * viewer flipped themselves. A signed-out visitor has no age on file, so the
