@@ -108,7 +108,10 @@ export function NativePlayer({
   const [chrome, setChrome] = useState(true);
   const [menu, setMenu] = useState<null | "quality" | "captions" | "source" | "speed" | "audio">(null);
   const [levels, setLevels] = useState<Level[]>([]);
+  /** -1 = Auto (ABR). Only ever set by the user opening the Quality menu. */
   const [level, setLevel] = useState(-1);
+  /** the rendition actually on screen right now, for the menu label */
+  const [activeLevel, setActiveLevel] = useState(-1);
   const [captionTracks, setCaptionTracks] = useState<Level[]>([]);
   const [caption, setCaption] = useState(-1);
   const [audioTracks, setAudioTracks] = useState<Level[]>([]);
@@ -176,6 +179,7 @@ export function NativePlayer({
     setWaiting(true);
     setFailed(false);
     setLevels([]);
+    setActiveLevel(-1);
     setCaptionTracks([]);
     recovery.current = { network: 0, media: 0, escalated: false };
 
@@ -271,9 +275,20 @@ export function NativePlayer({
       hls = new Hls({
         enableWorker: true,
         lowLatencyMode: false,
-        backBufferLength: 60,
-        maxBufferLength: 30,
-        maxMaxBufferLength: 60,
+        /* Netflix-style quality: open on the best rendition the source has and
+           only step *down* if bandwidth cannot keep up. The old settings made
+           hls.js guess 500 kbps, so every title started on the 640x266 variant
+           (and stayed there, because the small buffer kept ABR conservative). */
+        startLevel: -1,
+        abrEwmaDefaultEstimate: 6_000_000,
+        abrBandWidthFactor: 0.9,
+        abrBandWidthUpFactor: 0.85,
+        capLevelToPlayerSize: false,
+        testBandwidth: true,
+        backBufferLength: 30,
+        maxBufferLength: 60,
+        maxMaxBufferLength: 120,
+        maxBufferSize: 60 * 1000 * 1000,
         manifestLoadingTimeOut: 12_000,
         levelLoadingTimeOut: 12_000,
         fragLoadingTimeOut: 20_000,
@@ -293,17 +308,31 @@ export function NativePlayer({
       hls.attachMedia(video);
 
       hls.on(Hls.Events.MEDIA_ATTACHED, () => hls?.loadSource(url));
-      hls.on(Hls.Events.MANIFEST_PARSED, (_event: unknown, data: { levels: Array<{ height?: number; bitrate?: number }> }) => {
+      hls.on(Hls.Events.MANIFEST_PARSED, (
+        _event: unknown,
+        data: { levels: Array<{ height?: number; width?: number; bitrate?: number }> },
+      ) => {
+        /* a 1920x800 transfer is full HD in scope, so name it by its pixels
+           instead of pretending it is "800p" */
+        const label = (entry: { height?: number; width?: number; bitrate?: number }) => {
+          const height = entry.height ?? 0;
+          const width = entry.width ?? 0;
+          if (height && width && height / width < 0.5) return `${width}×${height}`;
+          if (height) return `${height}p`;
+          return `${Math.round((entry.bitrate ?? 0) / 1000)}k`;
+        };
         setLevels(
           data.levels.map((entry, index) => ({
             index,
-            label: entry.height ? `${entry.height}p` : `${Math.round((entry.bitrate ?? 0) / 1000)}k`,
+            label: label(entry),
           })),
         );
         nudgeResume();
         startPlayback();
       });
-      hls.on(Hls.Events.LEVEL_SWITCHED, (_event: unknown, data: { level: number }) => setLevel(data.level));
+      hls.on(Hls.Events.LEVEL_SWITCHED, (_event: unknown, data: { level: number }) =>
+        setActiveLevel(data.level),
+      );
       hls.on(
         Hls.Events.AUDIO_TRACKS_UPDATED,
         (_event: unknown, data: { audioTracks: Array<{ name?: string; lang?: string }> }) => {
@@ -460,7 +489,10 @@ export function NativePlayer({
   /* user picks a quality / caption track → apply it to the engine */
   useEffect(() => {
     if (!hlsRef.current) return;
+    /* -1 = Auto: give control back to ABR instead of pinning the rendition we
+       happened to start on (which is what froze every title at 640x266) */
     hlsRef.current.currentLevel = level;
+    if (level === -1) hlsRef.current.nextLevel = -1;
   }, [level]);
 
   useEffect(() => {
@@ -939,7 +971,13 @@ export function NativePlayer({
                   label="Quality"
                   active={menu === "quality"}
                   onClick={() => setMenu(menu === "quality" ? null : "quality")}
-                  text={level >= 0 ? levels.find((entry) => entry.index === level)?.label ?? "Auto" : "Auto"}
+                  text={
+                    level >= 0
+                      ? levels.find((entry) => entry.index === level)?.label ?? "Auto"
+                      : activeLevel >= 0
+                        ? `Auto · ${levels.find((entry) => entry.index === activeLevel)?.label ?? ""}`.trim()
+                        : "Auto"
+                  }
                   chrome={chrome}
                   panel={
                     <Panel>
@@ -952,6 +990,9 @@ export function NativePlayer({
                         }}
                       >
                         Auto
+                        {activeLevel >= 0
+                          ? ` · ${levels.find((entry) => entry.index === activeLevel)?.label ?? ""}`
+                          : ""}
                       </Option>
                       {[...levels].reverse().map((entry) => (
                         <Option
