@@ -146,17 +146,34 @@ export async function GET(request: Request) {
       if (segment) {
         const segmentUrl = new URL(`https://noflix.local${segment}`).searchParams.get("u");
         if (segmentUrl) {
+          /* the ones that matter first: the browser-shaped + ranged probe has a
+             body that upsets JSON readers, so keep it last */
+          const { proxied } = await import("@/lib/stream-sign");
+          const signedSegment = proxied(segmentUrl, hlsSource.referer);
+          const ranged = await hls(
+            new Request(`https://noflix.local${signedSegment}`, { headers: { range: "bytes=0-" } }),
+          );
+          const rangedBytes = Buffer.from(await ranged.arrayBuffer());
+          steps.push({
+            label: "segment via relay + range",
+            status: ranged.status,
+            contentType: ranged.headers.get("content-type"),
+            bytes: rangedBytes.length,
+            head: `${ranged.headers.get("content-range") ?? "no content-range"} | first byte 0x${(
+              rangedBytes[0] ?? 0
+            ).toString(16)}`,
+          });
           steps.push(await direct(segmentUrl, undefined, {}, "segment no-referer"));
+          steps.push(
+            await direct(segmentUrl, undefined, { range: "bytes=0-" }, "segment range only"),
+          );
           steps.push(
             await direct(
               segmentUrl,
-              "https://noflix-taupe.vercel.app/",
-              { ...browserHeaders, range: "bytes=0-" },
-              "segment browser+range",
+              "https://nextgencloudfabric.com/",
+              { origin: "https://nextgencloudfabric.com", range: "bytes=0-" },
+              "segment provider+range",
             ),
-          );
-          steps.push(
-            await direct(segmentUrl, undefined, { range: "bytes=0-" }, "segment range only"),
           );
           steps.push(
             await direct(
@@ -169,9 +186,9 @@ export async function GET(request: Request) {
           steps.push(
             await direct(
               segmentUrl,
-              "https://nextgencloudfabric.com/",
-              { origin: "https://nextgencloudfabric.com", range: "bytes=0-" },
-              "segment provider+range",
+              "https://noflix-taupe.vercel.app/",
+              { ...browserHeaders, range: "bytes=0-" },
+              "segment browser+range (last)",
             ),
           );
         }
