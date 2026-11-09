@@ -98,8 +98,6 @@ type Store = {
   setSearchOpen: (open: boolean) => void;
   toast: (message: string) => void;
   toasts: Toast[];
-  splash: boolean;
-  setSplash: (on: boolean) => void;
 };
 
 const StoreContext = createContext<Store | null>(null);
@@ -169,7 +167,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const [activeSlug, setActiveSlug] = useState<string | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [toasts, setToasts] = useState<Toast[]>([]);
-  const [splash, setSplash] = useState(false);
   const toastId = useRef(0);
 
   useEffect(() => {
@@ -179,8 +176,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     setProfilesState(storedProfiles);
     const active = storedProfile ? migrateProfile(storedProfile) : null;
     setProfileState(active);
-    /* the title card animation runs on every visit, not just the first one */
-    if (active) setSplash(true);
 
     setMyList(read<string[]>("nf.mylist", []));
     setProgressState(read<Record<string, WatchProgress>>("nf.progress", {}));
@@ -364,8 +359,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setSearchOpen,
       toast,
       toasts,
-      splash,
-      setSplash,
     }),
     [
       hydrated,
@@ -388,7 +381,6 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       searchOpen,
       toast,
       toasts,
-      splash,
     ],
   );
 
