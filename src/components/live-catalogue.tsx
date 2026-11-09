@@ -109,6 +109,31 @@ export function LiveCatalogue({
   const [tab, setTab] = useState<Tab>(initialTab ?? "movie");
   const [audience, setAudience] = useState<AudienceId>("all");
   const [explicit, setExplicit] = useState(false);
+
+  /* the 18+ switch is remembered, but only ever honoured for an All-maturity
+     profile — the home shelf reads the same flag before it shows its row */
+  useEffect(() => {
+    if (!adult) {
+      setExplicit(false);
+      return;
+    }
+    try {
+      setExplicit(window.localStorage.getItem("nf.adult") === "1");
+    } catch {
+      /* storage disabled — stay off */
+    }
+  }, [adult]);
+
+  const toggleExplicit = () => {
+    setExplicit((on) => {
+      try {
+        window.localStorage.setItem("nf.adult", on ? "0" : "1");
+      } catch {
+        /* storage disabled — the switch still works for this visit */
+      }
+      return !on;
+    });
+  };
   const [genreId, setGenreId] = useState<number | undefined>(undefined);
   const [items, setItems] = useState<Entry[]>([]);
   const [total, setTotal] = useState(0);
@@ -257,7 +282,7 @@ export function LiveCatalogue({
             {adult && (
               <button
                 type="button"
-                onClick={() => setExplicit((value) => !value)}
+                onClick={toggleExplicit}
                 aria-pressed={explicit}
                 className={cn(
                   "rounded-full border px-3 py-1 text-[12px] font-semibold transition",
