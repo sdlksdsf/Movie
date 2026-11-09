@@ -106,12 +106,23 @@ function readTick(data: unknown): Tick | null {
   };
 }
 
+/**
+ * Next episode after `season`/`episode`, wrapping into the following season.
+ * Compares episode *numbers*, not positions, because TMDB leaves gaps, and
+ * walks the season list in order so a missing or sparse season (specials, a
+ * split cour, a season with no episodes loaded) does not dead-end playback.
+ */
 function nextEpisodeOf(seasons: Season[], season: number, episode: number) {
-  const current = seasons.find((s) => s.number === season);
-  if (current && episode < current.episodes.length) return { season, episode: episode + 1 };
-  const after = seasons.find((s) => s.number === season + 1);
-  if (after && after.episodes.length > 0) return { season: season + 1, episode: 1 };
-  return null;
+  const ordered = [...seasons].sort((a, b) => a.number - b.number);
+  const current = ordered.find((s) => s.number === season);
+  const later = current?.episodes
+    .filter((entry) => entry.number > episode)
+    .sort((a, b) => a.number - b.number)[0];
+  if (later) return { season, episode: later.number };
+  const nextSeason = ordered.find((s) => s.number > season && s.episodes.length > 0);
+  if (!nextSeason) return null;
+  const first = [...nextSeason.episodes].sort((a, b) => a.number - b.number)[0];
+  return first ? { season: nextSeason.number, episode: first.number } : null;
 }
 
 export function Player({
