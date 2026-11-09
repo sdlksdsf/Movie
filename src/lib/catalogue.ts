@@ -336,6 +336,13 @@ async function buildExplicit(tab: CatalogueTab): Promise<CatalogueEntry[]> {
   if (hit && Date.now() - hit.at < TTL) return hit.items;
 
   const today = new Date().toISOString().slice(0, 10);
+  /*
+   * `include_adult=true` means "do not hide adult titles", not "only adult
+   * titles" — TMDb happily returns The Dark Knight alongside them. So every row
+   * is filtered down to items actually flagged `adult`, plus US NC-17 films,
+   * which is the closest thing to an 18+ certificate TMDb exposes at discover
+   * time.
+   */
   const plan: PagePlan[] = [
     {
       path: "/discover/movie",
@@ -353,7 +360,18 @@ async function buildExplicit(tab: CatalogueTab): Promise<CatalogueEntry[]> {
       params: {
         sort_by: "vote_count.desc",
         include_adult: "true",
-        "vote_count.gte": "20",
+        "vote_count.gte": "5",
+        "primary_release_date.lte": today,
+      },
+      audience: "explicit",
+    },
+    {
+      path: "/discover/movie",
+      kind: "movie",
+      params: {
+        sort_by: "vote_count.desc",
+        certification_country: "US",
+        certification: "NC-17",
         "primary_release_date.lte": today,
       },
       audience: "explicit",
@@ -366,7 +384,10 @@ async function buildExplicit(tab: CatalogueTab): Promise<CatalogueEntry[]> {
   for (let page = 1; page <= 25 && out.length < EXPLICIT_TARGET; page++) {
     const rows = await Promise.all(plan.map((source) => tmdb(source.path, { ...source.params, page: String(page) })));
     for (let index = 0; index < rows.length; index++) {
+      const nc17 = plan[index].params.certification === "NC-17";
       for (const item of rows[index]) {
+        /* the adult flag is the only honest 18+ signal in a discover response */
+        if (!nc17 && item.adult !== true) continue;
         if (seen.has(item.id)) continue;
         seen.add(item.id);
         out.push(map(item, plan[index].kind, tab === "anime", "explicit"));
