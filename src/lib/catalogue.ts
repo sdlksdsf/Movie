@@ -118,6 +118,9 @@ async function tmdb(
 
 type PagePlan = { path: string; kind: "movie" | "series"; params: Record<string, string> };
 
+/** TMDb keyword 210024 = "anime". */
+const ANIME_KEYWORD = "210024";
+
 /** Decades we sweep, so the shelves are not just "popular in the last 18 months". */
 const DECADES = [1950, 1960, 1970, 1980, 1990, 2000, 2010, 2020];
 
@@ -180,15 +183,43 @@ function planFor(tab: CatalogueTab): PagePlan[] {
     ];
   }
 
-  /* anime: Japanese animation only, series and films interleaved */
-  const japan = { with_genres: "16", with_origin_country: "JP" };
+  /*
+   * anime: Japanese animation, series and films interleaved.
+   *
+   * Deeper catalogue means shallower vote counts — TMDb's anime back catalogue
+   * has far fewer votes per title than live-action prime time, so the 50-vote
+   * floor that keeps the film shelves clean would starve this tab. Two thousand
+   * plus titles needs the floor down at 10, an original-language sweep, and a
+   * keyword pass for anime that TMDb has not tagged `JP`.
+   */
+  const japan = {
+    with_genres: "16",
+    with_origin_country: "JP",
+    "vote_count.gte": "10",
+  };
+  const japaneseLanguage = {
+    with_genres: "16",
+    with_original_language: "ja",
+    "vote_count.gte": "10",
+  };
+  const animeKeyword = {
+    with_genres: "16",
+    with_keywords: ANIME_KEYWORD,
+    "vote_count.gte": "10",
+  };
   return [
     seriesPlan(japan),
     moviePlan(japan),
+    seriesPlan(japaneseLanguage),
+    moviePlan(japaneseLanguage),
     seriesPlan({ ...japan, sort_by: "vote_count.desc", "vote_count.gte": "200" }),
     moviePlan({ ...japan, sort_by: "vote_count.desc", "vote_count.gte": "200" }),
+    seriesPlan(animeKeyword),
+    moviePlan(animeKeyword),
     ...decades("series", japan),
     ...decades("movie", japan),
+    ...decades("series", japaneseLanguage),
+    ...decades("movie", japaneseLanguage),
   ];
 }
 
