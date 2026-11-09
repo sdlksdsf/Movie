@@ -610,8 +610,9 @@ export function Player({
             if (nextEp) goTo(nextEp.season, nextEp.episode);
           }}
           onError={() => {
+            /* this title's stream is dead: drop to an embed for now, but don't
+               remember it — the next visit should try our player again */
             setNativeMode(false);
-            localStorage.setItem("nf.native", "0");
             toast("NOFLIX player couldn't start — using a backup server");
           }}
         />

@@ -63,6 +63,7 @@ export function NativePlayer({
   const shellRef = useRef<HTMLDivElement>(null);
   const hideTimer = useRef<number | null>(null);
   const lastSaved = useRef(0);
+  const recovery = useRef({ network: 0, media: 0, escalated: false });
 
   const [sourceIndex, setSourceIndex] = useState(0);
   const [playing, setPlaying] = useState(false);
@@ -96,6 +97,7 @@ export function NativePlayer({
     setFailed(false);
     setLevels([]);
     setCaptionTracks([]);
+    recovery.current = { network: 0, media: 0, escalated: false };
 
     const resumeAt = startAt && startAt > 20 ? startAt : 0;
     const nudgeResume = () => {
@@ -118,8 +120,36 @@ export function NativePlayer({
         });
     };
 
+    /** timers + element listeners we have to detach ourselves */
+    const stalls: { src?: number } = {};
+    let mediaErrorHandler: (() => void) | null = null;
+
+    /** give up on this source: try the next, then hand the page to the embeds */
+    const escalate = () => {
+      if (recovery.current.escalated) return;
+      recovery.current.escalated = true;
+      if (sourceIndex + 1 < sources.length) {
+        setSourceIndex((index) => index + 1);
+      } else {
+        setFailed(true);
+        onError?.();
+      }
+    };
+
     const bootstrap = async () => {
       if (source.type === "mp4" || video.canPlayType("application/vnd.apple.mpegurl")) {
+        /* the platform's own HLS/MP4 path (Safari, iOS): no hls.js involved, so
+           the element itself has to tell us when a source is dead */
+        mediaErrorHandler = () => escalate();
+        video.addEventListener("error", mediaErrorHandler);
+        stalls.src = window.setTimeout(() => {
+          if (video.readyState < 2) escalate();
+        }, 25_000);
+        video.addEventListener(
+          "playing",
+          () => window.clearTimeout(stalls.src),
+          { once: true },
+        );
         video.src = source.url;
         video.addEventListener("loadedmetadata", nudgeResume, { once: true });
         startPlayback();
@@ -173,22 +203,31 @@ export function NativePlayer({
           );
         },
       );
+      const escalateInside = escalate;
+
       hls.on(Hls.Events.ERROR, (_event: unknown, data: { fatal: boolean; type: string }) => {
         if (!data.fatal || !hls) return;
+        /* a few recoveries per source, then hand over to the next one — never
+           retry the same dead manifest forever */
         if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
-          hls.startLoad();
+          if (recovery.current.network < 2) {
+            recovery.current.network += 1;
+            hls.startLoad();
+            return;
+          }
+          escalateInside();
           return;
         }
         if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
-          hls.recoverMediaError();
+          if (recovery.current.media < 2) {
+            recovery.current.media += 1;
+            hls.recoverMediaError();
+            return;
+          }
+          escalateInside();
           return;
         }
-        if (sourceIndex + 1 < sources.length) {
-          setSourceIndex((index) => index + 1);
-        } else {
-          setFailed(true);
-          onError?.();
-        }
+        escalateInside();
       });
     };
 
@@ -196,6 +235,8 @@ export function NativePlayer({
 
     return () => {
       cancelled = true;
+      window.clearTimeout(stalls.src);
+      if (mediaErrorHandler) video.removeEventListener("error", mediaErrorHandler);
       hlsRef.current = null;
       hls?.destroy();
       video.removeAttribute("src");
