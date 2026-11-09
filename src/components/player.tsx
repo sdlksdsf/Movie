@@ -590,6 +590,15 @@ export function Player({
         <div className="absolute inset-0 bg-black/80" />
       </div>
 
+      {nativeActive && nativeState === "loading" && (
+        <div className="absolute inset-0 grid place-items-center">
+          <div className="flex flex-col items-center gap-2.5">
+            <span className="h-7 w-7 animate-spin rounded-full border-2 border-white/25 border-t-[var(--nf-accent)]" />
+            <p className="text-[12px] font-medium text-white/55">Finding a stream…</p>
+          </div>
+        </div>
+      )}
+
       {nativeActive && nativeState === "ready" && (
         <NativePlayer
           sources={nativeSources}
