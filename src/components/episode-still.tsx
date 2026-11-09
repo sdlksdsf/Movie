@@ -21,6 +21,7 @@ export function EpisodeStill({
   accent = "#333",
   sizes = "160px",
   className,
+  still: known,
 }: {
   tmdbId?: number;
   season: number;
@@ -29,11 +30,13 @@ export function EpisodeStill({
   accent?: string;
   sizes?: string;
   className?: string;
+  /** real still already in hand (server-rendered seasons) — skips the lookup */
+  still?: string;
 }) {
-  const [still, setStill] = useState<string | null>(null);
+  const [still, setStill] = useState<string | null>(known ?? null);
 
   useEffect(() => {
-    if (!tmdbId) return;
+    if (!tmdbId || known) return;
     let alive = true;
     void seasonStills(tmdbId, season).then((map) => {
       if (alive) setStill(map[episode] ?? null);
@@ -41,7 +44,7 @@ export function EpisodeStill({
     return () => {
       alive = false;
     };
-  }, [tmdbId, season, episode]);
+  }, [tmdbId, season, episode, known]);
 
   /* deterministic variation for the no-still fallback */
   const hue = (episode * 47 + season * 23) % 360;

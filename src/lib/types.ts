@@ -80,10 +80,16 @@ export type Episode = {
   name: string;
   runtime: number;
   overview: string;
+  /** real episode still from TMDB, when we have one */
+  still?: string;
+  /** original air date (YYYY-MM-DD) */
+  airDate?: string;
 };
 
 export type Season = {
   number: number;
   year: number;
   episodes: Episode[];
+  /** TMDB season name ("Season 1", "Book One", …) */
+  name?: string;
 };
