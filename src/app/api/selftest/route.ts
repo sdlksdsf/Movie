@@ -30,16 +30,21 @@ type Step = {
   text?: string;
 };
 
-async function direct(url: string, referer?: string): Promise<Step & { body?: string }> {
+async function direct(
+  url: string,
+  referer?: string,
+  extra: Record<string, string> = {},
+  label = "direct",
+): Promise<Step & { body?: string }> {
   try {
-    const headers: Record<string, string> = { "user-agent": UA, accept: "*/*" };
+    const headers: Record<string, string> = { "user-agent": UA, accept: "*/*", ...extra };
     if (referer) headers.referer = referer;
     const res = await fetch(url, { headers, cache: "no-store" });
     const buffer = Buffer.from(await res.arrayBuffer());
     const first = buffer.subarray(0, 4);
     const sniff = buffer.subarray(0, 64).toString("latin1");
     return {
-      label: referer ? "direct+referer" : "direct",
+      label,
       status: res.status,
       contentType: res.headers.get("content-type"),
       cors: res.headers.get("access-control-allow-origin"),
@@ -101,8 +106,22 @@ export async function GET(request: Request) {
 
   if (hlsSource) {
     const steps: Step[] = [];
-    steps.push(await direct(hlsSource.url));
-    steps.push(await direct(hlsSource.url, hlsSource.referer));
+    const browserHeaders = {
+      origin: "https://noflix-taupe.vercel.app",
+      "sec-fetch-dest": "empty",
+      "sec-fetch-mode": "cors",
+      "sec-fetch-site": "cross-site",
+    };
+    steps.push(await direct(hlsSource.url, undefined, {}, "no-referer"));
+    steps.push(await direct(hlsSource.url, hlsSource.referer, {}, "provider-referer"));
+    steps.push(
+      await direct(
+        hlsSource.url,
+        "https://noflix-taupe.vercel.app/",
+        browserHeaders,
+        "browser (our origin)",
+      ),
+    );
     const master = await relay(hlsSource.url, hlsSource.referer);
     steps.push({ ...master, text: undefined });
 
@@ -110,14 +129,28 @@ export async function GET(request: Request) {
     if (child) {
       /* the relay hands back a signed same-origin URL; unwrap it for a direct test */
       const inner = new URL(`https://noflix.local${child}`).searchParams.get("u");
-      if (inner) steps.push(await direct(inner));
+      if (inner) steps.push(await direct(inner, undefined, {}, "child no-referer"));
+      if (inner)
+        steps.push(
+          await direct(inner, "https://noflix-taupe.vercel.app/", browserHeaders, "child browser"),
+        );
       const childRelay = await relay(inner ?? "", hlsSource.referer);
       steps.push({ ...childRelay, text: undefined });
 
       const segment = childRelay.text ? uris(childRelay.text)[0] : null;
       if (segment) {
         const segmentUrl = new URL(`https://noflix.local${segment}`).searchParams.get("u");
-        if (segmentUrl) steps.push(await direct(segmentUrl));
+        if (segmentUrl) {
+          steps.push(await direct(segmentUrl, undefined, {}, "segment no-referer"));
+          steps.push(
+            await direct(
+              segmentUrl,
+              "https://noflix-taupe.vercel.app/",
+              { ...browserHeaders, range: "bytes=0-" },
+              "segment browser+range",
+            ),
+          );
+        }
         steps.push({ ...(await relay(segmentUrl ?? "", hlsSource.referer)), text: undefined });
       }
     }
