@@ -104,6 +104,8 @@ export async function GET(request: Request) {
   const hlsSource = resolved.sources.find((source) => source.type === "hls");
   const mp4Source = resolved.sources.find((source) => source.type === "mp4");
 
+  const only = new URL(request.url).searchParams.get("only");
+
   if (hlsSource) {
     const steps: Step[] = [];
     const browserHeaders = {
@@ -161,11 +163,22 @@ export async function GET(request: Request) {
               "segment browser no range",
             ),
           );
+          steps.push(
+            await direct(
+              segmentUrl,
+              "https://nextgencloudfabric.com/",
+              { origin: "https://nextgencloudfabric.com", range: "bytes=0-" },
+              "segment provider+range",
+            ),
+          );
         }
         steps.push({ ...(await relay(segmentUrl ?? "", hlsSource.referer)), text: undefined });
       }
     }
-    report.hls = { provider: hlsSource.provider, steps };
+    report.hls = {
+      provider: hlsSource.provider,
+      steps: only === "segment" ? steps.filter((step) => step.label.startsWith("segment")) : steps,
+    };
   }
 
   if (mp4Source) {
