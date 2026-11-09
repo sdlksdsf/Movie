@@ -7,5 +7,5 @@ export const metadata: Metadata = {
 };
 
 export default function Page() {
-  return <LiveCatalogue fixedTab="series" heading="1,000 TV shows" />;
+  return <LiveCatalogue initialTab="series" heading="TV Shows" />;
 }
