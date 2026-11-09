@@ -36,6 +36,7 @@ import {
   type Quality,
 } from "@/lib/players";
 import { anilistIdFor } from "@/lib/anime-ids";
+import { NativePlayer, type NativeSource } from "@/components/native-player";
 import type { Season, Title } from "@/lib/types";
 import { cn } from "@/lib/cn";
 
@@ -139,6 +140,10 @@ export function Player({
   const [player, setPlayer] = useState<PlayerId>(() =>
     resolvePlayer(anime ? "vidnest" : DEFAULT_PLAYER, title),
   );
+  /* NOFLIX's own player first; the embeds are the backup servers now */
+  const [nativeMode, setNativeMode] = useState(true);
+  const [nativeState, setNativeState] = useState<"loading" | "ready" | "none">("loading");
+  const [nativeSources, setNativeSources] = useState<NativeSource[]>([]);
   const [quality, setQuality] = useState<Quality>(DEFAULT_QUALITY);
   const [season, setSeason] = useState(initialSeason);
   const [episode, setEpisode] = useState(initialEpisode);
@@ -212,6 +217,47 @@ export function Player({
     );
   }, [aniState, title]);
 
+  /* our own player: resolve the real stream for this title/episode */
+  useEffect(() => {
+    if (!nativeMode) return;
+    const tmdbId = title.tmdbId;
+    if (!tmdbId) {
+      setNativeState("none");
+      return;
+    }
+
+    let alive = true;
+    setNativeState("loading");
+    setNativeSources([]);
+
+    const params = new URLSearchParams({
+      tmdb: String(tmdbId),
+      kind: title.kind === "series" ? "series" : "movie",
+      season: String(season),
+      episode: String(episode),
+    });
+
+    void fetch(`/api/stream?${params.toString()}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: { ok?: boolean; sources?: NativeSource[] } | null) => {
+        if (!alive) return;
+        const sources = data?.sources ?? [];
+        if (data?.ok && sources.length) {
+          setNativeSources(sources);
+          setNativeState("ready");
+        } else {
+          setNativeState("none");
+        }
+      })
+      .catch(() => {
+        if (alive) setNativeState("none");
+      });
+
+    return () => {
+      alive = false;
+    };
+  }, [nativeMode, title.tmdbId, title.kind, season, episode]);
+
   /* restore the user's chosen source + quality (default: frameXTV) */
   useEffect(() => {
     setMounted(true);
@@ -222,6 +268,12 @@ export function Player({
     setPlayer(resolvePlayer(start, title, title.anilistId ?? null));
     const q = ls.get("nf.quality");
     if (q && (QUALITIES as readonly string[]).includes(q)) setQuality(q as Quality);
+    /* remembers a manual switch to the backup embeds */
+    try {
+      if (window.localStorage.getItem("nf.native") === "0") setNativeMode(false);
+    } catch {
+      /* private mode */
+    }
     // legacy keys are deliberately ignored so everyone lands on frameXTV
   }, [title]);
 
@@ -269,6 +321,16 @@ export function Player({
     [title],
   );
   const nextEp = useMemo(() => nextEpisodeOf(seasons, season, episode), [seasons, season, episode]);
+  /** where our own player should start (same rule the embeds use) */
+  const startAt = useMemo(() => {
+    const stored = progress[title.slug];
+    const sameEpisode = stored && stored.season === season && stored.episode === episode;
+    return sameEpisode && stored.percent > 0.02 && stored.percent < 0.95 && stored.seconds
+      ? stored.seconds
+      : null;
+  }, [progress, title.slug, season, episode]);
+  /* our player is the default; a title with no resolvable stream falls back */
+  const nativeActive = nativeMode && nativeState !== "none";
   const currentSeason = seasons.find((s) => s.number === season);
 
   /* ---------------------------------------------------------------- source */
@@ -480,6 +542,8 @@ export function Player({
     }
     tried.current.clear();
     setPlayer(next);
+    setNativeMode(false);
+    localStorage.setItem("nf.native", "0");
     ls.set("nf.player", next);
     toast(`Playing from ${playerMeta(next).label}`);
     setMenu(false);
@@ -526,7 +590,35 @@ export function Player({
         <div className="absolute inset-0 bg-black/80" />
       </div>
 
-      {mounted && aniState !== "pending" && (
+      {nativeActive && nativeState === "ready" && (
+        <NativePlayer
+          sources={nativeSources}
+          title={`${title.name}${title.kind === "series" ? ` · S${season} E${episode}` : ""}`}
+          startAt={startAt}
+          onTick={({ current, total }) => {
+            if (!total) return;
+            setProgress(title.slug, {
+              season: title.kind === "series" ? season : 1,
+              episode: title.kind === "series" ? episode : 1,
+              percent: Math.min(1, Math.max(0, current / total)),
+              seconds: current,
+              duration: total,
+              updated: Date.now(),
+            });
+          }}
+          onEnded={() => {
+            if (nextEp) goTo(nextEp.season, nextEp.episode);
+          }}
+          onError={() => {
+            /* this title's stream is dead: drop to an embed for now, but don't
+               remember it — the next visit should try our player again */
+            setNativeMode(false);
+            toast("NOFLIX player couldn't start — using a backup server");
+          }}
+        />
+      )}
+
+      {!nativeActive && mounted && aniState !== "pending" && (
         <iframe
           ref={iframeRef}
           key={src}
@@ -635,10 +727,12 @@ export function Player({
                 <span
                   className={cn(
                     "h-1.5 w-1.5 rounded-full",
-                    loaded ? "bg-[#46d369]" : "bg-amber-400",
+                    (nativeActive ? nativeState === "ready" : loaded)
+                      ? "bg-[#46d369]"
+                      : "bg-amber-400",
                   )}
                 />
-                {activePlayer.label}
+                {nativeActive ? "NOFLIX Player" : activePlayer.label}
                 <ChevronDownIcon width={13} height={13} />
               </button>
             </motion.div>
@@ -657,6 +751,32 @@ export function Player({
             >
               <p className="px-2.5 pb-1 pt-1.5 text-[10px] font-semibold uppercase tracking-[0.18em] text-white/40">
                 Player
+              </p>
+              <Row
+                active={nativeMode && nativeState !== "none"}
+                title={
+                  <span className="flex items-center gap-1.5">
+                    NOFLIX Player
+                    <span className="rounded-sm bg-[var(--nf-accent)] px-1 py-[1px] text-[8px] font-bold uppercase tracking-wide text-white">
+                      Native
+                    </span>
+                  </span>
+                }
+                subtitle={
+                  nativeState === "none"
+                    ? "No direct stream — using a backup server"
+                    : "Our own player · resume, quality, captions"
+                }
+                disabled={nativeState === "none"}
+                onClick={() => {
+                  setNativeMode(true);
+                  localStorage.setItem("nf.native", "1");
+                  setMenu(false);
+                  toast("Playing in the NOFLIX player");
+                }}
+              />
+              <p className="mt-1 px-2.5 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-white/40">
+                Backup servers
               </p>
               {orderedPlayers.map((item) => {
                 const available = canPlayNow(item.id);
