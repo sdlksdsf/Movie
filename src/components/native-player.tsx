@@ -67,6 +67,8 @@ export function NativePlayer({
   onTick,
   onEnded,
   onError,
+  onNext,
+  nextLabel,
 }: {
   sources: NativeSource[];
   title: string;
@@ -75,6 +77,9 @@ export function NativePlayer({
   onTick?: (state: { current: number; total: number }) => void;
   onEnded?: () => void;
   onError?: () => void;
+  /** play the next episode — powers the Netflix-style end card */
+  onNext?: () => void;
+  nextLabel?: string;
 }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const hlsRef = useRef<import("hls.js").default | null>(null);
@@ -101,12 +106,21 @@ export function NativePlayer({
   const [volume, setVolume] = useState(1);
   const [muted, setMuted] = useState(false);
   const [chrome, setChrome] = useState(true);
-  const [menu, setMenu] = useState<null | "quality" | "captions" | "source">(null);
+  const [menu, setMenu] = useState<null | "quality" | "captions" | "source" | "speed" | "audio">(null);
   const [levels, setLevels] = useState<Level[]>([]);
   const [level, setLevel] = useState(-1);
   const [captionTracks, setCaptionTracks] = useState<Level[]>([]);
   const [caption, setCaption] = useState(-1);
+  const [audioTracks, setAudioTracks] = useState<Level[]>([]);
+  const [audio, setAudio] = useState(0);
+  const [speed, setSpeed] = useState(1);
   const [failed, setFailed] = useState(false);
+  const [flash, setFlash] = useState<null | "back" | "forward">(null);
+  const [slow, setSlow] = useState(false);
+  const [nextIn, setNextIn] = useState<number | null>(null);
+  const [generation, setGeneration] = useState(0);
+  const nextFired = useRef(false);
+  const tap = useRef({ at: 0, x: 0, timer: 0 });
 
   /* drop h265-only files when this browser cannot decode them: a black screen
      is worse than starting on a lower resolution */
@@ -115,6 +129,27 @@ export function NativePlayer({
     const keep = sources.filter((entry) => supportsHevc || entry.codec !== "hevc");
     return keep.length ? keep : supportsHevc ? sources : [];
   }, [sources]);
+
+  /**
+   * How each source is attempted, in order.
+   *
+   * hls.js fetches playlists with XHR, so a cross-origin CDN has to answer with
+   * CORS headers — most of these hosts do not. The relay is same-origin, so HLS
+   * goes through it first and only tries the CDN directly as a fallback.
+   * A plain MP4 load is opaque to the browser and needs no CORS, so it goes
+   * straight to the CDN (which is kind to residential IPs) and relays second.
+   */
+  const attempts = useMemo(
+    () =>
+      playable.map((entry) => {
+        const relay = entry.proxy;
+        const direct = entry.url;
+        return entry.type === "hls"
+          ? [relay, direct].filter(Boolean) as string[]
+          : [direct, relay].filter(Boolean) as string[];
+      }),
+    [playable],
+  );
 
   const sourceKey = useMemo(
     () => playable.map((entry) => `${entry.url}|${entry.proxy ?? ""}`).join("~"),
@@ -132,7 +167,7 @@ export function NativePlayer({
   useEffect(() => {
     const video = videoRef.current;
     const source = playable[sourceIndex];
-    const url = source ? (attempt === 1 ? (source.proxy ?? source.url) : source.url) : null;
+    const url = source ? (attempts[sourceIndex]?.[attempt] ?? null) : null;
     if (!video || !source || !url) return;
 
     let hls: import("hls.js").default | null = null;
@@ -176,8 +211,8 @@ export function NativePlayer({
     const escalate = () => {
       if (recovery.current.escalated) return;
       recovery.current.escalated = true;
-      if (attempt === 0 && source.proxy) {
-        setAttempt(1);
+      if (attempt + 1 < (attempts[sourceIndex]?.length ?? 1)) {
+        setAttempt(attempt + 1);
         return;
       }
       if (sourceIndex + 1 < playable.length) {
@@ -190,7 +225,10 @@ export function NativePlayer({
     };
 
     const bootstrap = async () => {
-      if (source.type === "mp4" || video.canPlayType("application/vnd.apple.mpegurl")) {
+      /* hls.js first whenever it can drive the file: it is the only path that
+         gives us a quality menu, audio tracks and clean error reporting. The
+         element's own HLS path stays for iOS/Safari and for MP4. */
+      if (source.type === "mp4") {
         /* the platform's own HLS/MP4 path (Safari, iOS): no hls.js involved, so
            the element itself has to tell us when a source is dead */
         mediaErrorHandler = () => escalate();
@@ -214,7 +252,18 @@ export function NativePlayer({
       if (cancelled) return;
 
       if (!Hls.isSupported()) {
+        /* Safari/iOS (or an ancient browser): the element plays HLS itself */
+        if (!video.canPlayType("application/vnd.apple.mpegurl")) {
+          escalate();
+          return;
+        }
+        mediaErrorHandler = () => escalate();
+        video.addEventListener("error", mediaErrorHandler);
+        stalls.src = window.setTimeout(() => {
+          if (video.readyState < 2) escalate();
+        }, 25_000);
         video.src = url;
+        video.addEventListener("loadedmetadata", nudgeResume, { once: true });
         startPlayback();
         return;
       }
@@ -228,10 +277,16 @@ export function NativePlayer({
         manifestLoadingTimeOut: 12_000,
         levelLoadingTimeOut: 12_000,
         fragLoadingTimeOut: 20_000,
-        /* the CDNs hotlink on Referer; a browser never lets us clear it on a
-           same-origin XHR, but it does honour `referrerPolicy` */
+        /* The CDNs hotlink on Referer, and a browser never lets us clear it on an
+           XHR — but it does honour `referrerPolicy`. `context.url` is often a
+           *relative* /api/hls path, and `new Request()` throws on those, which
+           silently killed every playlist; resolve it against the page first. */
         fetchSetup: (context: { url: string }, initParams: RequestInit) =>
-          new Request(context.url, { ...initParams, referrerPolicy: "no-referrer", credentials: "omit" }),
+          new Request(new URL(context.url, window.location.href).toString(), {
+            ...initParams,
+            referrerPolicy: "no-referrer",
+            credentials: "omit",
+          }),
       });
 
       hlsRef.current = hls;
@@ -249,6 +304,17 @@ export function NativePlayer({
         startPlayback();
       });
       hls.on(Hls.Events.LEVEL_SWITCHED, (_event: unknown, data: { level: number }) => setLevel(data.level));
+      hls.on(
+        Hls.Events.AUDIO_TRACKS_UPDATED,
+        (_event: unknown, data: { audioTracks: Array<{ name?: string; lang?: string }> }) => {
+          setAudioTracks(
+            data.audioTracks.map((track, index) => ({
+              index,
+              label: track.name || track.lang?.toUpperCase() || `Audio ${index + 1}`,
+            })),
+          );
+        },
+      );
       hls.on(
         Hls.Events.SUBTITLE_TRACKS_UPDATED,
         (_event: unknown, data: { subtitleTracks: Array<{ name?: string; lang?: string }> }) => {
@@ -300,7 +366,7 @@ export function NativePlayer({
       video.load();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sourceKey, sourceIndex, attempt]);
+  }, [sourceKey, sourceIndex, attempt, generation]);
 
   /* --------------------------------------------------------------- listeners */
 
@@ -362,6 +428,35 @@ export function NativePlayer({
     };
   }, [onTick, onEnded]);
 
+  /* playback speed, remembered across episodes */
+  useEffect(() => {
+    const stored = Number(window.localStorage.getItem("nf.speed"));
+    if (Number.isFinite(stored) && stored >= 0.5 && stored <= 2) setSpeed(stored);
+  }, []);
+
+  useEffect(() => {
+    if (videoRef.current) videoRef.current.playbackRate = speed;
+    try {
+      window.localStorage.setItem("nf.speed", String(speed));
+    } catch {
+      /* private mode */
+    }
+  }, [speed]);
+
+  useEffect(() => {
+    if (hlsRef.current) hlsRef.current.audioTrack = audio;
+  }, [audio]);
+
+  /* a first segment should arrive in a second or two; if it does not, say so */
+  useEffect(() => {
+    if (!waiting) {
+      setSlow(false);
+      return;
+    }
+    const timer = window.setTimeout(() => setSlow(true), 4500);
+    return () => window.clearTimeout(timer);
+  }, [waiting, sourceIndex, attempt, generation]);
+
   /* user picks a quality / caption track → apply it to the engine */
   useEffect(() => {
     if (!hlsRef.current) return;
@@ -372,6 +467,31 @@ export function NativePlayer({
     if (!hlsRef.current) return;
     hlsRef.current.subtitleTrack = caption;
   }, [caption]);
+
+  /* Netflix-style end card: offer the next episode during the last 25s */
+  useEffect(() => {
+    if (!onNext || !duration) {
+      setNextIn(null);
+      return;
+    }
+    const left = duration - time;
+    if (left > 25 || left < 0) {
+      setNextIn(null);
+      return;
+    }
+    setNextIn(Math.max(0, Math.ceil(left)));
+  }, [duration, time, onNext]);
+
+  useEffect(() => {
+    if (nextIn !== 0 || nextFired.current || !onNext) return;
+    nextFired.current = true;
+    onNext();
+  }, [nextIn, onNext]);
+
+  useEffect(() => {
+    nextFired.current = false;
+    setNextIn(null);
+  }, [sourceKey]);
 
   /* ---------------------------------------------------------------- controls */
 
@@ -456,6 +576,27 @@ export function NativePlayer({
         case "m":
           toggleMute();
           break;
+        case "j":
+          seekBy(-10);
+          poke();
+          break;
+        case "l":
+          seekBy(10);
+          poke();
+          break;
+        case "arrowup":
+          event.preventDefault();
+          if (videoRef.current) videoRef.current.volume = Math.min(1, videoRef.current.volume + 0.1);
+          poke();
+          break;
+        case "arrowdown":
+          event.preventDefault();
+          if (videoRef.current) videoRef.current.volume = Math.max(0, videoRef.current.volume - 0.1);
+          poke();
+          break;
+        case "escape":
+          if (document.fullscreenElement) void document.exitFullscreen().catch(() => undefined);
+          break;
         default:
           break;
       }
@@ -463,6 +604,47 @@ export function NativePlayer({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [poke, seekBy, toggle, toggleFullscreen, toggleMute]);
+
+  /** start the whole chain again — sources change, tokens expire, CDNs blink */
+  const retryAll = useCallback(() => {
+    nextFired.current = false;
+    setFailed(false);
+    setSourceIndex(0);
+    setAttempt(0);
+    setGeneration((value) => value + 1);
+  }, []);
+
+  /**
+   * One surface for taps: a second tap inside 320ms on the left/right third is
+   * a double-tap seek (how Netflix behaves on a phone), anything else is
+   * play/pause after a short wait so the two do not fight.
+   */
+  const onSurfaceTap = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      const rect = event.currentTarget.getBoundingClientRect();
+      const x = event.clientX - rect.left;
+      const now = Date.now();
+      const doubled = now - tap.current.at < 320 && Math.abs(x - tap.current.x) < 140;
+
+      if (doubled) {
+        window.clearTimeout(tap.current.timer);
+        tap.current = { at: 0, x, timer: 0 };
+        const back = x < rect.width * 0.38;
+        seekBy(back ? -10 : 10);
+        setFlash(back ? "back" : "forward");
+        window.setTimeout(() => setFlash(null), 520);
+        return;
+      }
+
+      tap.current.at = now;
+      tap.current.x = x;
+      tap.current.timer = window.setTimeout(() => {
+        toggle();
+        poke();
+      }, 250);
+    },
+    [poke, seekBy, toggle],
+  );
 
   const scrub = (event: React.PointerEvent<HTMLDivElement>) => {
     const rect = event.currentTarget.getBoundingClientRect();
@@ -483,17 +665,36 @@ export function NativePlayer({
         ref={videoEl}
         playsInline
         preload="metadata"
-        onClick={() => {
-          toggle();
-          poke();
-        }}
         className="h-full w-full bg-black object-contain"
       />
 
+      {/* taps: play/pause, or double-tap either side to jump 10s */}
+      <div className="absolute inset-0 z-10" onPointerUp={onSurfaceTap} />
+
+      {flash && (
+        <div
+          className={cn(
+            "pointer-events-none absolute inset-y-0 z-20 grid w-1/3 place-items-center bg-white/10",
+            flash === "back" ? "left-0 rounded-r-full" : "right-0 rounded-l-full",
+          )}
+        >
+          <span className="flex items-center gap-1 text-[13px] font-semibold text-white/90">
+            {flash === "back" ? <RewindIcon width={18} height={18} /> : <ForwardIcon width={18} height={18} />}10s
+          </span>
+        </div>
+      )}
+
       {/* buffering */}
       {waiting && !failed && (
-        <div className="pointer-events-none absolute inset-0 grid place-items-center">
-          <span className="h-10 w-10 animate-spin rounded-full border-2 border-white/25 border-t-[var(--nf-accent)]" />
+        <div className="pointer-events-none absolute inset-0 z-20 grid place-items-center">
+          <div className="flex flex-col items-center gap-3">
+            <span className="h-10 w-10 animate-spin rounded-full border-2 border-white/25 border-t-[var(--nf-accent)]" />
+            {slow && (
+              <p className="text-[12px] font-medium text-white/60">
+                Connecting to {playable[sourceIndex]?.label ?? "the stream"}…
+              </p>
+            )}
+          </div>
         </div>
       )}
 
@@ -505,32 +706,83 @@ export function NativePlayer({
             <p className="mt-1 text-[12.5px] text-white/55">
               Switch to a backup server from the menu — the embeds are still there.
             </p>
-            <button
-              type="button"
-              onClick={() => onError?.()}
-              className="mt-4 rounded-full bg-[var(--nf-accent)] px-4 py-2 text-[12.5px] font-semibold"
-            >
-              Use a backup server
-            </button>
+            <div className="mt-4 flex items-center justify-center gap-2">
+              <button
+                type="button"
+                onClick={retryAll}
+                className="rounded-full bg-white px-4 py-2 text-[12.5px] font-semibold text-black"
+              >
+                Try again
+              </button>
+              <button
+                type="button"
+                onClick={() => onError?.()}
+                className="rounded-full bg-white/15 px-4 py-2 text-[12.5px] font-semibold text-white"
+              >
+                Backup server
+              </button>
+            </div>
+            <p className="mt-2 text-[11px] text-white/35">
+              {playable.length} source{playable.length === 1 ? "" : "s"} tried ·{" "}
+              {playable.map((entry) => entry.label).join(", ") || "none available"}
+            </p>
           </div>
         </div>
       )}
 
-      {/* centre play affordance */}
+      {/* centre play affordance (the tap surface owns the click) */}
       {!playing && !waiting && !failed && (
+        <div className="pointer-events-none absolute inset-0 z-20 grid place-items-center">
+          <span className="grid h-16 w-16 place-items-center rounded-full bg-black/55 ring-2 ring-white/70 backdrop-blur-sm">
+            <PlayIcon width={22} height={22} />
+          </span>
+        </div>
+      )}
+
+      {/* skip intro */}
+      {playing && time > 5 && time < 95 && (
         <button
           type="button"
           onClick={() => {
-            toggle();
+            seekBy(85);
             poke();
           }}
-          aria-label="Play"
-          className="absolute inset-0 grid place-items-center"
+          className="absolute bottom-24 right-4 z-30 rounded-md bg-white/90 px-3.5 py-2 text-[12px] font-semibold text-black shadow-lg transition hover:bg-white md:right-6"
         >
-          <span className="grid h-16 w-16 place-items-center rounded-full bg-black/55 ring-2 ring-white/70 backdrop-blur-sm transition hover:scale-105 hover:bg-black/70">
-            <PlayIcon width={22} height={22} />
-          </span>
+          Skip intro
         </button>
+      )}
+
+      {/* next episode card, like the real thing */}
+      {nextIn !== null && onNext && !failed && (
+        <div className="absolute bottom-24 right-4 z-30 w-[228px] rounded-lg border border-white/10 bg-[#141414]/95 p-3 shadow-2xl backdrop-blur-xl md:right-6">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-white/45">
+            {nextIn > 0 ? `Next episode in ${nextIn}` : "Next episode"}
+          </p>
+          <p className="mt-1 truncate text-[13px] font-semibold">{nextLabel ?? "Up next"}</p>
+          <div className="mt-2.5 flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                nextFired.current = true;
+                onNext();
+              }}
+              className="flex-1 rounded-md bg-white px-3 py-1.5 text-[12px] font-semibold text-black"
+            >
+              Play now
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                nextFired.current = true;
+                setNextIn(null);
+              }}
+              className="rounded-md bg-white/10 px-3 py-1.5 text-[12px] font-semibold text-white/80"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
       )}
 
       {/* chrome */}
@@ -717,6 +969,58 @@ export function NativePlayer({
                   }
                 />
               )}
+
+              {/* audio track */}
+              {audioTracks.length > 1 && (
+                <MenuButton
+                  label="Audio"
+                  active={menu === "audio"}
+                  onClick={() => setMenu(menu === "audio" ? null : "audio")}
+                  text={audioTracks.find((entry) => entry.index === audio)?.label ?? "Audio"}
+                  chrome={chrome}
+                  panel={
+                    <Panel>
+                      {audioTracks.map((track) => (
+                        <Option
+                          key={track.index}
+                          active={audio === track.index}
+                          onClick={() => {
+                            setAudio(track.index);
+                            setMenu(null);
+                          }}
+                        >
+                          {track.label}
+                        </Option>
+                      ))}
+                    </Panel>
+                  }
+                />
+              )}
+
+              {/* playback speed */}
+              <MenuButton
+                label="Playback speed"
+                active={menu === "speed"}
+                onClick={() => setMenu(menu === "speed" ? null : "speed")}
+                text={speed === 1 ? "1x" : `${speed}x`}
+                chrome={chrome}
+                panel={
+                  <Panel>
+                    {[0.5, 0.75, 1, 1.25, 1.5, 2].map((value) => (
+                      <Option
+                        key={value}
+                        active={speed === value}
+                        onClick={() => {
+                          setSpeed(value);
+                          setMenu(null);
+                        }}
+                      >
+                        {value === 1 ? "Normal" : `${value}x`}
+                      </Option>
+                    ))}
+                  </Panel>
+                }
+              />
 
               <button type="button" onClick={() => void togglePip()} aria-label="Picture in picture" className="hidden p-1.5 text-white/85 hover:text-white sm:block">
                 <PiPIcon />

@@ -82,6 +82,63 @@ async function sniff(upstream: Response): Promise<Sniffed> {
 }
 
 /**
+ * `bytes=START-END?` -> numbers. Anything exotic (multi-range, suffix ranges)
+ * comes back null and is simply forwarded untouched.
+ */
+function parseRange(header: string): { start: number; end: number | null } | null {
+  const match = /^bytes=(\d+)-(\d*)$/i.exec(header.trim());
+  if (!match) return null;
+  const start = Number(match[1]);
+  const end = match[2] ? Number(match[2]) : null;
+  if (!Number.isFinite(start) || (end !== null && end < start)) return null;
+  return { start, end };
+}
+
+const MAX_SLICE_BYTES = 48 * 1024 * 1024;
+
+/**
+ * Provider CDNs label every segment `text/html`. Safari's native HLS player is
+ * the one client that still cares about that, so map the obvious extensions
+ * back to media types and leave everything else alone.
+ */
+function mediaType(url: URL, contentType: string): string {
+  const path = url.pathname.toLowerCase();
+  if (/\.m3u8?$/.test(path)) return "application/vnd.apple.mpegurl";
+  if (/\.(ts|html)$/.test(path)) return "video/mp2t";
+  if (/\.m4s$/.test(path)) return "video/iso.segment";
+  if (/\.(mp4|m4v)$/.test(path)) return "video/mp4";
+  return contentType || "application/octet-stream";
+}
+
+/**
+ * Point every URI in a playlist back at this route, keeping the same referer and
+ * expiry, so child playlists, keys and segments stay signed and same-origin.
+ */
+function rewriteManifest(body: string, url: URL, referer: string, expiresAt: number): string {
+  const sign = (uri: string) => {
+    let absolute = uri;
+    try {
+      absolute = new URL(uri, url).toString();
+    } catch {
+      /* keep the raw uri */
+    }
+    return proxied(absolute, referer, expiresAt);
+  };
+
+  return body
+    .split("\n")
+    .map((line) => {
+      const trimmed = line.trim();
+      if (!trimmed) return line;
+      if (trimmed.startsWith("#")) {
+        return line.replace(/URI="([^"]+)"/g, (_match, uri: string) => `URI="${sign(uri)}"`);
+      }
+      return sign(trimmed);
+    })
+    .join("\n");
+}
+
+/**
  * GET /api/hls?u=<url>&r=<referer>&e=<expiry>&s=<signature>
  *
  * A tiny, signed HLS proxy: it replays the Referer/Origin a CDN expects,
@@ -114,18 +171,18 @@ export async function GET(request: Request) {
   }
 
   const range = request.headers.get("range");
-  const headers: Record<string, string> = {
+  const base: Record<string, string> = {
     "user-agent": UA,
     referer,
     accept: "*/*",
     "accept-language": "en-US,en;q=0.9",
   };
   try {
-    headers.origin = new URL(referer).origin;
+    base.origin = new URL(referer).origin;
   } catch {
     /* referer already validated */
   }
-  if (range) headers.range = range;
+  const headers = range ? { ...base, range } : base;
 
   let upstream: Response;
   try {
@@ -136,6 +193,90 @@ export async function GET(request: Request) {
     });
   } catch {
     return new Response("upstream unreachable", { status: 502 });
+  }
+
+  /*
+   * Ranged requests are the fragile part of this whole chain, because Safari's
+   * native HLS player and every `<video src>` open with `Range: bytes=0-`.
+   * Two CDN behaviours have to be absorbed here:
+   *   1. the CDN takes our Range and ignores it (200 + the whole object) —
+   *      Safari wants a real 206, so slice it ourselves;
+   *   2. the CDN rejects the ranged request outright (400/403/416) but serves
+   *      the same object in full — retry bare and slice (below).
+   */
+  if (range && upstream.status === 200) {
+    const wanted = parseRange(range);
+    const declared = Number(upstream.headers.get("content-length") ?? 0);
+    if (wanted && declared > 0 && declared <= MAX_SLICE_BYTES) {
+      const buffer = new Uint8Array(await upstream.arrayBuffer());
+      const head = new TextDecoder().decode(buffer.subarray(0, 16)).trimStart();
+      if (!head.startsWith(MANIFEST_MAGIC)) {
+        const start = Math.min(wanted.start, Math.max(buffer.byteLength - 1, 0));
+        const stop = Math.min(wanted.end ?? buffer.byteLength - 1, buffer.byteLength - 1);
+        const slice = buffer.subarray(start, stop + 1);
+        return new Response(slice, {
+          status: 206,
+          headers: {
+            "content-type": mediaType(url, (upstream.headers.get("content-type") ?? "").toLowerCase()),
+            "content-range": `bytes ${start}-${stop}/${buffer.byteLength}`,
+            "content-length": String(slice.byteLength),
+            "accept-ranges": "bytes",
+            "cache-control": "public, max-age=600, s-maxage=3600",
+            "access-control-allow-origin": "*",
+          },
+        });
+      }
+      /* it was a playlist after all: fall through with the bytes we already read */
+      const signed = rewriteManifest(new TextDecoder().decode(buffer), url, referer, expiresAt);
+      return new Response(signed, {
+        status: 200,
+        headers: {
+          "content-type": "application/vnd.apple.mpegurl",
+          "cache-control": "no-store",
+          "access-control-allow-origin": "*",
+        },
+      });
+    }
+  }
+
+  if (range && !upstream.ok && upstream.status !== 206) {
+    const wanted = parseRange(range);
+    void upstream.body?.cancel().catch(() => {});
+    let bare: Response | null = null;
+    try {
+      bare = await fetch(url.toString(), {
+        headers: base,
+        cache: "no-store",
+        redirect: "follow",
+      });
+    } catch {
+      bare = null;
+    }
+    if (bare?.ok) {
+      const declared = Number(bare.headers.get("content-length") ?? 0);
+      if (declared > MAX_SLICE_BYTES) {
+        return new Response("range unsupported upstream", { status: 502 });
+      }
+      const buffer = new Uint8Array(await bare.arrayBuffer());
+      if (buffer.byteLength > MAX_SLICE_BYTES) {
+        return new Response("range unsupported upstream", { status: 502 });
+      }
+      const start = wanted ? Math.min(wanted.start, Math.max(buffer.byteLength - 1, 0)) : 0;
+      const end = wanted?.end ?? buffer.byteLength - 1;
+      const stop = Math.min(end, buffer.byteLength - 1);
+      const slice = buffer.subarray(start, stop + 1);
+      return new Response(slice, {
+        status: 206,
+        headers: {
+          "content-type": mediaType(url, (bare.headers.get("content-type") ?? "").toLowerCase()),
+          "content-range": `bytes ${start}-${stop}/${buffer.byteLength}`,
+          "content-length": String(slice.byteLength),
+          "accept-ranges": "bytes",
+          "cache-control": "public, max-age=600, s-maxage=3600",
+          "access-control-allow-origin": "*",
+        },
+      });
+    }
   }
 
   if (!upstream.ok && upstream.status !== 206) {
@@ -154,29 +295,7 @@ export async function GET(request: Request) {
     }
 
     if (sniffed.kind === "manifest") {
-      const absolute = (uri: string) => {
-        try {
-          return new URL(uri, url).toString();
-        } catch {
-          return uri;
-        }
-      };
-
-      const sign = (uri: string) => proxied(absolute(uri), referer, expiresAt);
-
-      const rewritten = sniffed.body
-        .split("\n")
-        .map((line) => {
-          const trimmed = line.trim();
-          if (!trimmed) return line;
-          if (trimmed.startsWith("#")) {
-            return line.replace(/URI="([^"]+)"/g, (_match, uri: string) => `URI="${sign(uri)}"`);
-          }
-          return sign(trimmed);
-        })
-        .join("\n");
-
-      return new Response(rewritten, {
+      return new Response(rewriteManifest(sniffed.body, url, referer, expiresAt), {
         status: 200,
         headers: {
           "content-type": "application/vnd.apple.mpegurl",
@@ -187,7 +306,7 @@ export async function GET(request: Request) {
     }
 
     const passthrough = new Headers({
-      "content-type": contentType || "application/octet-stream",
+      "content-type": mediaType(url, contentType),
       "accept-ranges": upstream.headers.get("accept-ranges") ?? "bytes",
       "cache-control": "public, max-age=600, s-maxage=3600",
       "access-control-allow-origin": "*",
@@ -199,7 +318,7 @@ export async function GET(request: Request) {
   }
 
   const passthrough = new Headers({
-    "content-type": contentType || "application/octet-stream",
+    "content-type": mediaType(url, contentType),
     "accept-ranges": upstream.headers.get("accept-ranges") ?? "bytes",
     "cache-control": "public, max-age=600, s-maxage=3600",
     "access-control-allow-origin": "*",

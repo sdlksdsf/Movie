@@ -270,7 +270,7 @@ export function Player({
     if (q && (QUALITIES as readonly string[]).includes(q)) setQuality(q as Quality);
     /* remembers a manual switch to the backup embeds */
     try {
-      if (window.localStorage.getItem("nf.native") === "0") setNativeMode(false);
+      if (window.localStorage.getItem("nf.native3") === "0") setNativeMode(false);
     } catch {
       /* private mode */
     }
@@ -321,6 +321,13 @@ export function Player({
     [title],
   );
   const nextEp = useMemo(() => nextEpisodeOf(seasons, season, episode), [seasons, season, episode]);
+  const nextEpisodeLabel = useMemo(() => {
+    if (!nextEp) return undefined;
+    const name = seasons
+      .find((entry) => entry.number === nextEp.season)
+      ?.episodes.find((item) => item.number === nextEp.episode)?.name;
+    return name ? `S${nextEp.season} E${nextEp.episode} · ${name}` : `S${nextEp.season} E${nextEp.episode}`;
+  }, [nextEp, seasons]);
   /** where our own player should start (same rule the embeds use) */
   const startAt = useMemo(() => {
     const stored = progress[title.slug];
@@ -543,7 +550,7 @@ export function Player({
     tried.current.clear();
     setPlayer(next);
     setNativeMode(false);
-    localStorage.setItem("nf.native", "0");
+    localStorage.setItem("nf.native3", "0");
     ls.set("nf.player", next);
     toast(`Playing from ${playerMeta(next).label}`);
     setMenu(false);
@@ -618,6 +625,8 @@ export function Player({
           onEnded={() => {
             if (nextEp) goTo(nextEp.season, nextEp.episode);
           }}
+          onNext={nextEp ? () => goTo(nextEp.season, nextEp.episode) : undefined}
+          nextLabel={nextEp ? nextEpisodeLabel : undefined}
           onError={() => {
             /* this title's stream is dead: drop to an embed for now, but don't
                remember it — the next visit should try our player again */
@@ -779,7 +788,7 @@ export function Player({
                 disabled={nativeState === "none"}
                 onClick={() => {
                   setNativeMode(true);
-                  localStorage.setItem("nf.native", "1");
+                  localStorage.setItem("nf.native3", "1");
                   setMenu(false);
                   toast("Playing in the NOFLIX player");
                 }}
