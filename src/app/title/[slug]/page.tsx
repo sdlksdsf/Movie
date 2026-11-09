@@ -12,7 +12,6 @@ import {
   formatRuntime,
   getTitle,
   seasonsFor,
-  shortMeta,
   similarTo,
 } from "@/lib/catalog";
 import { seasonsForTmdb } from "@/lib/seasons";
@@ -88,7 +87,13 @@ export default async function TitlePage({
                 <span className="rounded border border-white/40 px-1.5 py-[1px] text-[11px]">
                   {title.maturity}
                 </span>
-                <span>{title.kind === "movie" ? formatRuntime(title.runtime) : shortMeta(title)}</span>
+                <span>
+                  {title.kind === "movie"
+                    ? formatRuntime(title.runtime)
+                    : seasons.length > 1
+                      ? `${seasons.length} Seasons`
+                      : "Limited Series"}
+                </span>
               </div>
               <p className="mt-4 max-w-[640px] text-sm leading-relaxed text-white/75">{title.overview}</p>
               <div className="mt-6 flex flex-wrap items-center gap-3">
