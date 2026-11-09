@@ -317,9 +317,10 @@ async function vaplayer(
 
   return {
     provider: "vaplayer",
-    sources: urls.map((url) => ({
+    sources: urls.map((url, index) => ({
       provider: "vaplayer",
-      label: "VaPlayer",
+      /* each URL is a complete adaptive master, not a fixed quality */
+      label: urls.length > 1 ? `VaPlayer ${index + 1}` : "VaPlayer",
       quality: "auto",
       url,
       type: /\.mp4(\?|$)/i.test(url) ? "mp4" : "hls",
