@@ -270,7 +270,7 @@ export function Player({
     if (q && (QUALITIES as readonly string[]).includes(q)) setQuality(q as Quality);
     /* remembers a manual switch to the backup embeds */
     try {
-      if (window.localStorage.getItem("nf.native") === "0") setNativeMode(false);
+      if (window.localStorage.getItem("nf.native3") === "0") setNativeMode(false);
     } catch {
       /* private mode */
     }
@@ -543,7 +543,7 @@ export function Player({
     tried.current.clear();
     setPlayer(next);
     setNativeMode(false);
-    localStorage.setItem("nf.native", "0");
+    localStorage.setItem("nf.native3", "0");
     ls.set("nf.player", next);
     toast(`Playing from ${playerMeta(next).label}`);
     setMenu(false);
@@ -779,7 +779,7 @@ export function Player({
                 disabled={nativeState === "none"}
                 onClick={() => {
                   setNativeMode(true);
-                  localStorage.setItem("nf.native", "1");
+                  localStorage.setItem("nf.native3", "1");
                   setMenu(false);
                   toast("Playing in the NOFLIX player");
                 }}

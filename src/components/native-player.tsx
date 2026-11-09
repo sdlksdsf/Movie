@@ -116,6 +116,27 @@ export function NativePlayer({
     return keep.length ? keep : supportsHevc ? sources : [];
   }, [sources]);
 
+  /**
+   * How each source is attempted, in order.
+   *
+   * hls.js fetches playlists with XHR, so a cross-origin CDN has to answer with
+   * CORS headers — most of these hosts do not. The relay is same-origin, so HLS
+   * goes through it first and only tries the CDN directly as a fallback.
+   * A plain MP4 load is opaque to the browser and needs no CORS, so it goes
+   * straight to the CDN (which is kind to residential IPs) and relays second.
+   */
+  const attempts = useMemo(
+    () =>
+      playable.map((entry) => {
+        const relay = entry.proxy;
+        const direct = entry.url;
+        return entry.type === "hls"
+          ? [relay, direct].filter(Boolean) as string[]
+          : [direct, relay].filter(Boolean) as string[];
+      }),
+    [playable],
+  );
+
   const sourceKey = useMemo(
     () => playable.map((entry) => `${entry.url}|${entry.proxy ?? ""}`).join("~"),
     [playable],
@@ -132,7 +153,7 @@ export function NativePlayer({
   useEffect(() => {
     const video = videoRef.current;
     const source = playable[sourceIndex];
-    const url = source ? (attempt === 1 ? (source.proxy ?? source.url) : source.url) : null;
+    const url = source ? (attempts[sourceIndex]?.[attempt] ?? null) : null;
     if (!video || !source || !url) return;
 
     let hls: import("hls.js").default | null = null;
@@ -176,8 +197,8 @@ export function NativePlayer({
     const escalate = () => {
       if (recovery.current.escalated) return;
       recovery.current.escalated = true;
-      if (attempt === 0 && source.proxy) {
-        setAttempt(1);
+      if (attempt + 1 < (attempts[sourceIndex]?.length ?? 1)) {
+        setAttempt(attempt + 1);
         return;
       }
       if (sourceIndex + 1 < playable.length) {
