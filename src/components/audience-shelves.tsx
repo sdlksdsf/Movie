@@ -70,11 +70,27 @@ const cardUrl = (entry: Entry) =>
 export function AudienceShelves() {
   const { profile } = useStore();
   const kids = Boolean(profile?.kids);
-  const level = profile?.maturity ?? "all";
+  const level = profile?.maturity ?? "";
   /* R-rated needs a 16+ profile, 18+ needs the All profile, kids see neither */
-  const matureOk = !kids && (level === "16" || level === "all");
-  /* 18+ shelf: only a profile that opted into "All" maturity sees it at all */
-  const adult = !kids && level === "all";
+  /* signed-out visitors have no age on file: they get the general R row */
+  const matureOk = !kids && (level === "" || level === "16" || level === "all");
+  /*
+   * 18+ shelf: needs a saved profile pinned to "All" maturity *and* a switch the
+   * viewer flipped themselves. A signed-out visitor has no age on file, so the
+   * row stays hidden rather than defaulting to the widest setting.
+   */
+  const adultOk = Boolean(profile) && !kids && level === "all";
+  const [optedIn, setOptedIn] = useState(false);
+
+  useEffect(() => {
+    try {
+      setOptedIn(window.localStorage.getItem("nf.adult") === "1");
+    } catch {
+      /* storage disabled — stay off */
+    }
+  }, []);
+
+  const adult = adultOk && optedIn;
 
   const wanted = useMemo(() => {
     if (kids) return [];
