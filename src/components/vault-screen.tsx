@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useStore } from "@/components/store";
 import { cn } from "@/lib/cn";
 import type { VaultFeed, VaultItem } from "@/lib/vault-types";
+import { VAULT_CATEGORIES, VAULT_COUNTRIES, facetFor } from "@/lib/vault-taxonomy";
 
 /**
  * The 18+ vault screen.
@@ -14,14 +15,19 @@ import type { VaultFeed, VaultItem } from "@/lib/vault-types";
  * browser while maturity is per profile — a kid can sit down at an unlocked
  * device. So the first thing this does is re-check the active profile and
  * revoke the session if it is not an All-maturity adult profile.
+ *
+ * Search and both rails are *server-side*: typing or picking a facet re-queries
+ * `/api/vault`, so you can find anything the provider has rather than only what
+ * happens to be in the first page of results already in the browser.
  */
 export function VaultScreen() {
   const router = useRouter();
   const { profile } = useStore();
   const [state, setState] = useState<"checking" | "ready" | "locked" | "denied">("checking");
   const [feed, setFeed] = useState<VaultFeed | null>(null);
-  const [tag, setTag] = useState<string>("all");
+  const [loading, setLoading] = useState(false);
   const [query, setQuery] = useState("");
+  const [tag, setTag] = useState<string>("");
   const [playing, setPlaying] = useState<VaultItem | null>(null);
 
   const adult = Boolean(profile && !profile.kids && profile.maturity === "all");
@@ -39,52 +45,58 @@ export function VaultScreen() {
     return () => clearTimeout(timer);
   }, [state, router]);
 
+  /* one request pipeline for the initial load, the search box and the rails */
   useEffect(() => {
     if (state !== "ready") return;
-    let alive = true;
-    void (async () => {
-      try {
-        const res = await fetch("/api/vault", { cache: "no-store" });
-        if (res.status === 401) {
-          if (alive) setState("locked");
-          return;
+    const controller = new AbortController();
+    const delay = query.trim().length > 0 ? 320 : 0;
+
+    const timer = setTimeout(() => {
+      setLoading(true);
+      void (async () => {
+        try {
+          const params = new URLSearchParams();
+          if (query.trim()) params.set("q", query.trim());
+          if (tag) params.set("tag", tag);
+          const res = await fetch(`/api/vault${params.size ? `?${params}` : ""}`, {
+            cache: "no-store",
+            signal: controller.signal,
+          });
+          if (res.status === 401) {
+            setState("locked");
+            return;
+          }
+          const payload = (await res.json()) as VaultFeed;
+          setFeed(payload);
+        } catch (error) {
+          if (!(error instanceof DOMException && error.name === "AbortError")) {
+            setFeed({ items: [], configured: true, error: "could not reach the vault" });
+          }
+        } finally {
+          setLoading(false);
         }
-        const payload = (await res.json()) as VaultFeed & { error?: string };
-        if (alive) setFeed(payload);
-      } catch {
-        if (alive) setFeed({ items: [], configured: true, error: "could not reach the vault" });
-      }
-    })();
+      })();
+    }, delay);
+
     return () => {
-      alive = false;
+      clearTimeout(timer);
+      controller.abort();
     };
-  }, [state]);
+  }, [state, query, tag]);
 
   const lock = useCallback(async () => {
     await fetch("/api/vault", { method: "DELETE" }).catch(() => undefined);
     router.replace("/settings?tab=privacy");
   }, [router]);
 
-  const tags = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const item of feed?.items ?? []) {
-      for (const name of item.tags) counts.set(name, (counts.get(name) ?? 0) + 1);
-    }
-    return [...counts.entries()]
-      .filter(([, count]) => count > 1)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 14)
-      .map(([name]) => name);
-  }, [feed]);
+  const activeFacet = useMemo(() => facetFor(tag), [tag]);
+  const country = useMemo(() => VAULT_COUNTRIES.find((entry) => entry.id === tag), [tag]);
+  const items = feed?.items ?? [];
 
-  const visible = useMemo(() => {
-    const needle = query.trim().toLowerCase();
-    return (feed?.items ?? []).filter((item) => {
-      if (tag !== "all" && !item.tags.includes(tag)) return false;
-      if (!needle) return true;
-      return `${item.title} ${item.tags.join(" ")}`.toLowerCase().includes(needle);
-    });
-  }, [feed, tag, query]);
+  const pick = (id: string) => {
+    setTag(id);
+    setQuery("");
+  };
 
   if (state === "denied") {
     return (
@@ -98,7 +110,7 @@ export function VaultScreen() {
     );
   }
 
-  if (state === "checking" || (state === "ready" && !feed)) {
+  if (state === "checking" || (state === "ready" && !feed && loading)) {
     return (
       <main className="grid min-h-screen place-items-center px-6">
         <p className="animate-pulse text-[13px] text-white/40">Opening the vault…</p>
@@ -136,13 +148,22 @@ export function VaultScreen() {
             18+ only
           </span>
           <div className="ml-auto flex items-center gap-3">
-            <input
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search the vault"
-              aria-label="Search the vault"
-              className="w-36 rounded-md border border-white/15 bg-white/5 px-3 py-1.5 text-[13px] text-white placeholder:text-white/35 focus:border-white/40 focus:outline-none sm:w-56"
-            />
+            <div className="relative">
+              <input
+                value={query}
+                onChange={(event) => {
+                  setQuery(event.target.value);
+                  setTag("");
+                }}
+                type="search"
+                placeholder="Search the vault"
+                aria-label="Search the vault"
+                className="w-40 rounded-md border border-white/15 bg-white/5 py-1.5 pl-8 pr-3 text-[13px] text-white placeholder:text-white/35 focus:border-white/40 focus:outline-none sm:w-64"
+              />
+              <span aria-hidden className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-[12px] text-white/40">
+                🔍
+              </span>
+            </div>
             <button
               type="button"
               onClick={() => void lock()}
@@ -156,31 +177,96 @@ export function VaultScreen() {
 
       <main className="mx-auto max-w-[1400px] px-4 py-8 md:px-8">
         <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-[#ff5c5c]">Adults only · 18+</p>
-        <h1 className="mt-1 font-display text-[clamp(1.7rem,4vw,2.6rem)] leading-none text-white">The vault</h1>
+        <h1 className="mt-1 font-display text-[clamp(1.7rem,4vw,2.6rem)] leading-none text-white">
+          {country ? `From ${country.emoji} ${country.label}` : activeFacet ? activeFacet.label : "The vault"}
+        </h1>
         <p className="mt-2 max-w-2xl text-[12.5px] leading-relaxed text-white/40">
           Separate from the catalogue on purpose. Nothing here appears in search, shelves or the home page, and the
           session dies on its own after 45 minutes.
         </p>
 
-        {tags.length > 0 && (
-          <div className="no-scrollbar mt-5 flex gap-2 overflow-x-auto pb-1">
-            {["all", ...tags].map((name) => (
+        {/* categories — one provider search term each, resolved server-side */}
+        <section className="mt-6">
+          <div className="flex items-baseline gap-2">
+            <h2 className="text-[11px] font-semibold uppercase tracking-[0.18em] text-white/40">Categories</h2>
+            {tag && (
               <button
-                key={name}
                 type="button"
-                onClick={() => setTag(name)}
-                aria-pressed={tag === name}
+                onClick={() => pick("")}
+                className="text-[11px] text-[#ff8080] underline-offset-4 hover:underline"
+              >
+                clear
+              </button>
+            )}
+          </div>
+          <div className="no-scrollbar mt-2 flex gap-2 overflow-x-auto pb-1">
+            {VAULT_CATEGORIES.map((facet) => (
+              <button
+                key={facet.id}
+                type="button"
+                onClick={() => pick(facet.id)}
+                aria-pressed={tag === facet.id}
                 className={cn(
-                  "shrink-0 rounded-full border px-3 py-1.5 text-[12px] capitalize transition",
-                  tag === name
+                  "shrink-0 rounded-full border px-3 py-1.5 text-[12px] transition",
+                  tag === facet.id
                     ? "border-[#ff5c5c] bg-[#ff5c5c]/15 text-white"
                     : "border-white/15 text-white/55 hover:border-white/35 hover:text-white",
                 )}
               >
-                {name === "all" ? "Everything" : name}
+                <span aria-hidden className="mr-1">
+                  {facet.emoji}
+                </span>
+                {facet.label}
               </button>
             ))}
           </div>
+        </section>
+
+        {/* country rail — these are provider tags, not a real geo filter */}
+        <section className="mt-5">
+          <h2 className="text-[11px] font-semibold uppercase tracking-[0.18em] text-white/40">
+            From each country
+          </h2>
+          <div className="no-scrollbar mt-2 flex gap-2 overflow-x-auto pb-1">
+            {VAULT_COUNTRIES.map((facet) => (
+              <button
+                key={facet.id}
+                type="button"
+                onClick={() => pick(facet.id)}
+                aria-pressed={tag === facet.id}
+                title={`Titles tagged “${facet.term}” by the provider`}
+                className={cn(
+                  "shrink-0 rounded-full border px-3 py-1.5 text-[12px] transition",
+                  tag === facet.id
+                    ? "border-[#ff5c5c] bg-[#ff5c5c]/15 text-white"
+                    : "border-white/15 text-white/55 hover:border-white/35 hover:text-white",
+                )}
+              >
+                <span aria-hidden className="mr-1.5">
+                  {facet.emoji}
+                </span>
+                {facet.label}
+              </button>
+            ))}
+          </div>
+        </section>
+
+        {(query.trim() || activeFacet) && (
+          <p className="mt-5 text-[12px] text-white/40">
+            {loading ? "Searching…" : `${items.length} ${items.length === 1 ? "result" : "results"}`}
+            {query.trim() && (
+              <>
+                {" "}
+                for <span className="text-white/70">“{query.trim()}”</span>
+              </>
+            )}
+            {activeFacet && !query.trim() && (
+              <>
+                {" "}
+                tagged <span className="text-white/70">“{activeFacet.term}”</span>
+              </>
+            )}
+          </p>
         )}
 
         {feed?.error && (
@@ -196,14 +282,21 @@ export function VaultScreen() {
 
         {!feed?.configured && <NotConfigured />}
 
-        {feed?.configured && visible.length === 0 && !feed.error && (
+        {feed?.configured && !feed.error && items.length === 0 && !loading && (
           <p className="mt-8 text-[13px] text-white/40">
-            {feed.items.length === 0 ? "The feed is connected but returned no plays." : "Nothing matches that filter."}
+            {query.trim() || activeFacet
+              ? "Nothing matched that. Try a broader word, or another category."
+              : "The provider is connected but returned no plays."}
           </p>
         )}
 
-        <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6">
-          {visible.map((item) => (
+        <div
+          className={cn(
+            "mt-6 grid grid-cols-2 gap-3 transition-opacity sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6",
+            loading && "opacity-50",
+          )}
+        >
+          {items.map((item) => (
             <button
               key={item.id}
               type="button"
@@ -235,8 +328,7 @@ export function VaultScreen() {
               <span className="block px-2.5 py-2">
                 <span className="line-clamp-1 block text-[12.5px] font-medium text-white">{item.title}</span>
                 <span className="mt-0.5 line-clamp-1 block text-[11px] capitalize text-white/35">
-                  {item.year ? `${item.year} · ` : ""}
-                  {item.tags.slice(0, 2).join(" · ")}
+                  {item.tags.slice(0, 3).join(" · ") || (item.source ?? "18+")}
                 </span>
               </span>
             </button>
