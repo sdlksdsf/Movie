@@ -1,5 +1,6 @@
 import "server-only";
 import type { VaultFeed, VaultItem } from "@/lib/vault-types";
+import { facetFor } from "@/lib/vault-taxonomy";
 
 /**
  * Where the vault's is sourced from.
@@ -139,15 +140,16 @@ async function loadCustomFeed(): Promise<VaultFeed> {
 
 /* -------------------------------------------------------------- eporner v2 */
 
-function epornerUrl(page: number): string {
+function epornerUrl(page: number, term?: string): string {
   const params = new URLSearchParams({
     per_page: "100",
     page: String(page),
     thumbsize: "big",
-    order: process.env.VAULT_ORDER?.trim() || "top-weekly",
+    /* a filtered view is best ordered by relevance-ish recency, not by week */
+    order: term ? "top-rated" : process.env.VAULT_ORDER?.trim() || "top-weekly",
     format: "json",
   });
-  const query = process.env.VAULT_QUERY?.trim();
+  const query = term?.trim() || process.env.VAULT_QUERY?.trim();
   if (query) params.set("query", query);
   return `${EPORNER_SEARCH}?${params.toString()}`;
 }
@@ -184,15 +186,17 @@ function fromEporner(raw: unknown): VaultItem | null {
   };
 }
 
-async function loadEporner(): Promise<VaultFeed> {
-  const pages = clamp(Number(process.env.VAULT_PAGES ?? 2) || 2, 1, 6);
+async function loadEporner(term?: string): Promise<VaultFeed> {
+  /* a search or facet needs fewer pages than a front page — keep it snappy */
+  const configuredPages = Number(process.env.VAULT_PAGES ?? 2) || 2;
+  const pages = term ? Math.min(configuredPages, 2) : clamp(configuredPages, 1, 6);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
   try {
     const responses = await Promise.allSettled(
       Array.from({ length: pages }, async (_, index) => {
-        const res = await fetch(epornerUrl(index + 1), {
+        const res = await fetch(epornerUrl(index + 1, term), {
           signal: controller.signal,
           cache: "no-store",
           headers: { accept: "application/json" },
@@ -247,8 +251,61 @@ export function vaultProvider(): "eporner" | "custom" | "none" {
   return "eporner";
 }
 
-export async function loadVaultFeed(): Promise<VaultFeed> {
+/* ------------------------------------------------------------------- cache */
+
+type Entry = { expires: number; feed: VaultFeed };
+const CACHE_TTL_MS = 5 * 60 * 1000;
+const ERROR_TTL_MS = 20 * 1000;
+const CACHE_MAX = 40;
+const cache = new Map<string, Entry>();
+
+/**
+ * Five minutes per query. Facet browsing and type-ahead would otherwise hit the
+ * provider on every keystroke, which is exactly what the Webmasters API terms
+ * (and their rate limiters) do not want. A failure is only remembered briefly,
+ * so a transient outage does not stick to the vault for five minutes.
+ */
+function cached(key: string): VaultFeed | undefined {
+  const hit = cache.get(key);
+  if (!hit) return undefined;
+  if (Date.now() > hit.expires) {
+    cache.delete(key);
+    return undefined;
+  }
+  return hit.feed;
+}
+
+function remember(key: string, feed: VaultFeed): VaultFeed {
+  if (cache.size >= CACHE_MAX) {
+    const oldest = cache.keys().next().value;
+    if (oldest) cache.delete(oldest);
+  }
+  cache.set(key, { expires: Date.now() + (feed.error ? ERROR_TTL_MS : CACHE_TTL_MS), feed });
+  return feed;
+}
+
+export type VaultQuery = { q?: string; tag?: string };
+
+/**
+ * Resolve the request into one provider search term. `tag` is looked up against
+ * our own list first, so a client can never push an arbitrary string through as
+ * a facet id, and `q` is length-capped.
+ */
+export function resolveTerm({ q, tag }: VaultQuery): string {
+  const facet = facetFor(tag);
+  if (facet) return facet.term;
+  return (q ?? "").replace(/\s+/g, " ").trim().slice(0, 64);
+}
+
+export async function loadVaultFeed(options: VaultQuery = {}): Promise<VaultFeed> {
   const provider = vaultProvider();
   if (provider === "none") return { items: [], configured: false, provider: "none" };
-  return provider === "custom" ? loadCustomFeed() : loadEporner();
+
+  const term = provider === "eporner" ? resolveTerm(options) : "";
+  const key = `${provider}:${term.toLowerCase()}`;
+  const hit = cached(key);
+  if (hit) return hit;
+
+  const feed = provider === "custom" ? await loadCustomFeed() : await loadEporner(term);
+  return remember(key, { ...feed, term });
 }

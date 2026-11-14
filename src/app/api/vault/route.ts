@@ -26,12 +26,21 @@ export const runtime = "nodejs";
 const locked = () => NextResponse.json({ error: "locked" }, { status: 401, headers: PRIVATE });
 const disabled = () => NextResponse.json({ error: "disabled" }, { status: 404, headers: PRIVATE });
 
-/** Is the current browser holding a live vault session? */
-export async function GET() {
+/**
+ * Is the current browser holding a live vault session? With one, this also
+ * serves the catalogue: `?q=` is free-text search, `?tag=` is one of our
+ * category / country facets, and both go through the same lock.
+ */
+export async function GET(request: Request) {
   if (!vaultConfigured()) return disabled();
   const jar = await cookies();
   if (!verifyVaultToken(jar.get(VAULT_COOKIE)?.value)) return locked();
-  const feed = await loadVaultFeed();
+
+  const url = new URL(request.url);
+  const q = url.searchParams.get("q")?.slice(0, 64) ?? "";
+  const tag = url.searchParams.get("tag")?.slice(0, 32) ?? "";
+
+  const feed = await loadVaultFeed({ q, tag });
   return NextResponse.json(feed, { headers: PRIVATE });
 }
 

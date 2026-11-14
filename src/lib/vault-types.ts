@@ -32,6 +32,8 @@ export type VaultItem = {
 export type VaultFeed = {
   items: VaultItem[];
   total?: number;
+  /** the search term the provider was asked for, echoed back for the UI */
+  term?: string;
   /** false when no provider is wired up at all */
   configured: boolean;
   /** which provider answered: "eporner", "custom", "none" */

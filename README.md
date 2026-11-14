@@ -188,6 +188,18 @@ way in is Settings → Privacy & data, and that panel is not rendered at all for
 kids, 7+, 13+ or 16+ profiles. Sessions are revoked the moment a non-adult
 profile opens the page, and PIN attempts are throttled to five per ten minutes.
 
+The vault has a search box, a category rail and a "from each country" rail. All
+three are server-side: they re-query the provider through `/api/vault?q=…` or
+`?tag=…` (behind the same 45-minute lock), so you search the whole catalogue
+rather than the page already in the browser. Responses are cached in memory for
+five minutes per query so type-ahead does not hammer the provider.
+
+Neither rail is a real taxonomy — the Webmasters API has no category endpoint and
+no ISO-country parameter, only free text — so each facet is a search term, and
+`src/lib/vault-taxonomy.ts` is where the lists live. Add or remove entries there;
+a facet that returns nothing shows "nothing matched that" rather than a dead
+tile.
+
 **NOFLIX hosts nothing, for any section of the site.** There is no media storage
 in the deployment: posters and text come from public metadata APIs, and playback
 happens inside the provider's own player, in an iframe, directly from their CDN
