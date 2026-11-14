@@ -184,9 +184,14 @@ export function VaultScreen() {
         )}
 
         {feed?.error && (
-          <p className="mt-5 rounded-lg border border-[#ffb44d]/30 bg-[#ffb44d]/10 px-3 py-2 text-[12.5px] text-[#ffcf94]">
-            {feed.error}
-          </p>
+          <div className="mt-5 rounded-lg border border-[#ffb44d]/30 bg-[#ffb44d]/10 px-3 py-2 text-[12.5px] leading-relaxed text-[#ffcf94]">
+            <p>{feed.error}</p>
+            <p className="mt-1 text-[11.5px] text-[#ffcf94]/70">
+              If the provider keeps refusing, some hosts block server-side requests. Point{" "}
+              <code className="text-[#ffcf94]">VAULT_PROVIDER=custom</code> at your own feed, or try{" "}
+              <code className="text-[#ffcf94]">VAULT_ORDER=latest</code>.
+            </p>
+          </div>
         )}
 
         {!feed?.configured && <NotConfigured />}
@@ -205,7 +210,8 @@ export function VaultScreen() {
               onClick={() => setPlaying(item)}
               className="group relative overflow-hidden rounded-lg border border-white/10 bg-white/[0.03] text-left transition hover:border-white/30"
             >
-              <span className="relative block aspect-[16/10] overflow-hidden bg-black">
+              {/* provider thumbnails are portrait (201×360), so the card is too */}
+              <span className="relative block aspect-[3/4] overflow-hidden bg-black">
                 {item.poster ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
@@ -246,11 +252,14 @@ export function VaultScreen() {
 function NotConfigured() {
   return (
     <div className="mt-6 rounded-lg border border-white/12 bg-white/[0.03] p-4 text-[12.5px] leading-relaxed text-white/50">
-      <p className="font-semibold text-white/80">No feed connected yet</p>
+      <p className="font-semibold text-white/80">No provider connected</p>
       <p className="mt-1">
-        Set <code className="rounded bg-white/10 px-1 py-0.5 text-[11.5px] text-white/80">VAULT_FEED_URL</code> (and
-        optionally <code className="rounded bg-white/10 px-1 py-0.5 text-[11.5px] text-white/80">VAULT_FEED_KEY</code>)
-        to a JSON index of streams from your provider. NOFLIX stores no adult media itself.
+        Leave <code className="rounded bg-white/10 px-1 py-0.5 text-[11.5px] text-white/80">VAULT_PROVIDER</code> unset
+        (or <code className="rounded bg-white/10 px-1 py-0.5 text-[11.5px] text-white/80">eporner</code>) to embed
+        Eporner&apos;s public catalogue, or set it to{" "}
+        <code className="rounded bg-white/10 px-1 py-0.5 text-[11.5px] text-white/80">custom</code> plus{" "}
+        <code className="rounded bg-white/10 px-1 py-0.5 text-[11.5px] text-white/80">VAULT_FEED_URL</code> to use
+        your own JSON index. NOFLIX hosts no adult media — playback always happens on the provider&apos;s side.
       </p>
     </div>
   );
@@ -262,12 +271,20 @@ function VaultPlayer({ item, onClose }: { item: VaultItem; onClose: () => void }
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  /*
+   * Embed items are played by the provider in their own iframe — NOFLIX never
+   * touches those bytes, which is the whole point of the "we host nothing"
+   * promise. Only when a source hands over a direct stream do we drive a
+   * <video> element ourselves.
+   */
   useEffect(() => {
+    if (item.embed) return;
     const video = videoRef.current;
-    if (!video) return;
+    const source = item.stream;
+    if (!video || !source) return;
     let destroy: (() => void) | undefined;
 
-    const isHls = /\.m3u8(\?|$)/i.test(item.stream);
+    const isHls = /\.m3u8(\?|$)/i.test(source);
     if (isHls && !video.canPlayType("application/vnd.apple.mpegurl")) {
       void (async () => {
         try {
@@ -277,7 +294,7 @@ function VaultPlayer({ item, onClose }: { item: VaultItem; onClose: () => void }
             return;
           }
           const hls = new Hls({ enableWorker: true, lowLatencyMode: false });
-          hls.loadSource(item.stream);
+          hls.loadSource(source);
           hls.attachMedia(video);
           hls.on(Hls.Events.ERROR, (_event, data) => {
             if (data.fatal) setError("That stream would not load.");
@@ -288,7 +305,7 @@ function VaultPlayer({ item, onClose }: { item: VaultItem; onClose: () => void }
         }
       })();
     } else {
-      video.src = item.stream;
+      video.src = source;
     }
 
     void video.play().catch(() => undefined);
@@ -326,15 +343,32 @@ function VaultPlayer({ item, onClose }: { item: VaultItem; onClose: () => void }
           </button>
         </div>
         <div className="relative overflow-hidden rounded-lg bg-black">
-          <video
-            ref={videoRef}
-            controls
-            playsInline
-            poster={item.poster}
-            className="aspect-video w-full bg-black"
-            onError={() => setError("That stream would not load.")}
-          />
+          {item.embed ? (
+            <iframe
+              src={item.embed}
+              title={item.title}
+              className="aspect-video w-full bg-black"
+              allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
+              referrerPolicy="no-referrer"
+              sandbox="allow-scripts allow-same-origin allow-presentation allow-popups"
+              allowFullScreen
+            />
+          ) : (
+            <video
+              ref={videoRef}
+              controls
+              playsInline
+              poster={item.poster}
+              className="aspect-video w-full bg-black"
+              onError={() => setError("That stream would not load.")}
+            />
+          )}
         </div>
+        {item.embed && (
+          <p className="mt-2 text-[11.5px] text-white/35">
+            Played by {item.source ?? "the provider"} in their own player. NOFLIX hosts nothing.
+          </p>
+        )}
         {error && <p className="mt-2 text-[12.5px] text-[#ff8080]">{error}</p>}
       </div>
     </div>
