@@ -1,6 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import { artUrl } from "@/lib/img";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Navbar } from "@/components/navbar";
 import { Footer } from "@/components/footer";
@@ -300,7 +301,7 @@ export function LiveCatalogue({
                   {item.poster ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
-                      src={item.poster}
+                      src={artUrl(item.poster)}
                       alt={item.name}
                       loading="lazy"
                       decoding="async"

@@ -24,14 +24,10 @@ export function Row({ row, priority = false }: { row: RowType; priority?: boolea
   const items = (row.ranked ? topTen() : row.slugs.map(getTitle).filter(Boolean)) as Title[];
   if (!items.length) return null;
 
+  /* CSS, not framer-motion: a row must never depend on hydration or on an
+     IntersectionObserver firing to become visible */
   return (
-    <motion.section
-      initial={{ opacity: 0, y: 26 }}
-      whileInView={{ opacity: 1, y: 0 }}
-      viewport={{ once: true, margin: "-40px" }}
-      transition={{ duration: 0.55, ease: [0.2, 0.8, 0.2, 1] }}
-      className="row-shell group/row relative py-3 md:py-4"
-    >
+    <section className="row-shell nf-rise group/row relative py-3 md:py-4">
       <div className="mb-2 flex items-baseline gap-3 px-4 md:px-12">
         <h2 className="text-[15px] font-semibold tracking-wide text-[#e5e5e5] transition-colors hover:text-white md:text-[19px]">
           {row.title}
@@ -61,7 +57,7 @@ export function Row({ row, priority = false }: { row: RowType; priority?: boolea
           </div>
         ))}
       </ShelfStrip>
-    </motion.section>
+    </section>
   );
 }
 
@@ -81,14 +77,10 @@ export function ContinueRow({
 
   if (!items.length) return null;
 
+  /* CSS, not framer-motion: a row must never depend on hydration or on an
+     IntersectionObserver firing to become visible */
   return (
-    <motion.section
-      initial={{ opacity: 0, y: 26 }}
-      whileInView={{ opacity: 1, y: 0 }}
-      viewport={{ once: true, margin: "-40px" }}
-      transition={{ duration: 0.55, ease: [0.2, 0.8, 0.2, 1] }}
-      className="row-shell group/row relative py-3 md:py-4"
-    >
+    <section className="row-shell nf-rise group/row relative py-3 md:py-4">
       <div className="mb-2 flex items-baseline gap-3 px-4 md:px-12">
         <h2 className="text-[15px] font-semibold tracking-wide text-[#e5e5e5] md:text-[19px]">
           {title}
@@ -118,7 +110,7 @@ export function ContinueRow({
           );
         })}
       </ShelfStrip>
-    </motion.section>
+    </section>
   );
 }
 
