@@ -20,9 +20,8 @@ type Entry = {
   poster?: string;
   genres: number[];
   anime?: boolean;
-  /** which shelf found it: kids/family, mature (R / TV-MA), explicit, or general */
-  audience?: "kids" | "family" | "mature" | "explicit" | "general";
-  explicit?: boolean;
+  /** which shelf found it: kids/family, mature (R / TV-MA), or general */
+  audience?: "kids" | "family" | "mature" | "general";
 };
 
 /** The audience filters offered on top of the tab + genre chips. */
@@ -103,37 +102,9 @@ export function LiveCatalogue({
   const router = useRouter();
   const { profile } = useStore();
   const kids = Boolean(profile?.kids);
-  /* 18+ shelf: only a profile that has chosen "All" maturity may see it */
-  const adult = !kids && profile?.maturity === "all";
 
   const [tab, setTab] = useState<Tab>(initialTab ?? "movie");
   const [audience, setAudience] = useState<AudienceId>("all");
-  const [explicit, setExplicit] = useState(false);
-
-  /* the 18+ switch is remembered, but only ever honoured for an All-maturity
-     profile — the home shelf reads the same flag before it shows its row */
-  useEffect(() => {
-    if (!adult) {
-      setExplicit(false);
-      return;
-    }
-    try {
-      setExplicit(window.localStorage.getItem("nf.adult") === "1");
-    } catch {
-      /* storage disabled — stay off */
-    }
-  }, [adult]);
-
-  const toggleExplicit = () => {
-    setExplicit((on) => {
-      try {
-        window.localStorage.setItem("nf.adult", on ? "0" : "1");
-      } catch {
-        /* storage disabled — the switch still works for this visit */
-      }
-      return !on;
-    });
-  };
   const [genreId, setGenreId] = useState<number | undefined>(undefined);
   const [items, setItems] = useState<Entry[]>([]);
   const [total, setTotal] = useState(0);
@@ -149,7 +120,6 @@ export function LiveCatalogue({
       genre: number | undefined,
       offset: number,
       audienceId: AudienceId,
-      wantExplicit: boolean,
     ) => {
       if (busy.current) return;
       busy.current = true;
@@ -165,8 +135,6 @@ export function LiveCatalogue({
         if (genre) params.set("genre", String(genre));
         if (kids) params.set("kids", "1");
         if (audienceId !== "all") params.set("audience", audienceId);
-        /* the server ignores this unless the caller is allowed to see it */
-        if (wantExplicit && adult) params.set("explicit", "1");
 
         const res = await fetch(`/api/catalogue?${params.toString()}`);
         const data = (await res.json()) as {
@@ -189,7 +157,7 @@ export function LiveCatalogue({
         }
       }
     },
-    [kids, adult],
+    [kids],
   );
 
   /* start over whenever the filter changes */
@@ -198,8 +166,8 @@ export function LiveCatalogue({
     setTotal(0);
     setDone(false);
     busy.current = false;
-    void load(tab, genreId, 0, audience, explicit);
-  }, [tab, genreId, audience, explicit, load]);
+    void load(tab, genreId, 0, audience);
+  }, [tab, genreId, audience, load]);
 
   /* walk the shelf as you scroll */
   useEffect(() => {
@@ -210,14 +178,14 @@ export function LiveCatalogue({
         /* only walk further once the reader has actually started scrolling —
            otherwise the first paint can chain-load the whole shelf */
         if (entries[0]?.isIntersecting && !busy.current && window.scrollY > 240) {
-          void load(tab, genreId, items.length, audience, explicit);
+          void load(tab, genreId, items.length, audience);
         }
       },
       { rootMargin: "420px 0px" },
     );
     observer.observe(node);
     return () => observer.disconnect();
-  }, [items.length, done, tab, genreId, audience, explicit, load]);
+  }, [items.length, done, tab, genreId, audience, load]);
 
   const genres = useMemo(() => GENRES[tab], [tab]);
   const activeTab = TABS.find((entry) => entry.id === tab) ?? TABS[0];
@@ -267,8 +235,7 @@ export function LiveCatalogue({
             </div>
           </div>
 
-          {/* audience chips — kids/family, mature, and the 18+ shelf for
-              profiles that have opted into "All" maturity */}
+          {/* audience chips — everything, kids/family, mature */}
           <div className="mt-3 flex flex-wrap items-center gap-2">
             {AUDIENCES.map((option) => (
               <Chip
@@ -279,25 +246,9 @@ export function LiveCatalogue({
                 {option.label}
               </Chip>
             ))}
-            {adult && (
-              <button
-                type="button"
-                onClick={toggleExplicit}
-                aria-pressed={explicit}
-                className={cn(
-                  "rounded-full border px-3 py-1 text-[12px] font-semibold transition",
-                  explicit
-                    ? "border-[#e50914] bg-[#e50914] text-white"
-                    : "border-[#e50914]/50 text-[#e50914] hover:border-[#e50914] hover:bg-[#e50914]/10",
-                )}
-                title="18+ titles — only visible to profiles set to All maturity"
-              >
-                {explicit ? "18+ on" : "Show 18+"}
-              </button>
-            )}
             {kids && (
               <span className="text-[11px] text-white/40">
-                Kid-safe profile — mature and 18+ titles are hidden
+                Kid-safe profile — mature titles are hidden
               </span>
             )}
           </div>
@@ -420,7 +371,7 @@ export function LiveCatalogue({
                   onClick={() => {
                     setDone(false);
                     setLoading(true);
-                    void load(tab, genreId, 0, audience, explicit);
+                    void load(tab, genreId, 0, audience);
                   }}
                   className="rounded-full bg-white/10 px-4 py-1.5 text-[12.5px] font-semibold text-white/85 transition hover:bg-white/20"
                 >
