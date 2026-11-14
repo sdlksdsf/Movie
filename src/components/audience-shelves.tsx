@@ -15,8 +15,7 @@ type Entry = {
   poster?: string;
   genres: number[];
   anime?: boolean;
-  audience?: "kids" | "mature" | "explicit" | "general";
-  explicit?: boolean;
+  audience?: "kids" | "mature" | "general";
 };
 
 type Shelf = {
@@ -25,16 +24,13 @@ type Shelf = {
   hint: string;
   audience: string;
   tab: "movie" | "series";
-  explicit?: boolean;
 };
 
 /**
- * Audience shelves: kids/family, R-rated, and — only for a profile that has
- * chosen "All" maturity — the 18+ shelf.
+ * Audience shelves: kids/family and R-rated.
  *
  * These read the same `/api/catalogue` the browse page uses, so they cannot
- * drift from it, and the server drops `explicit` titles unless the request
- * literally asked for them.
+ * drift from it.
  */
 const SHELVES: Shelf[] = [
   {
@@ -53,15 +49,6 @@ const SHELVES: Shelf[] = [
   },
 ];
 
-const AFTER_DARK: Shelf = {
-  id: "after-dark",
-  title: "18+ After Dark",
-  hint: "Adult titles — visible only on an All-maturity profile",
-  audience: "explicit",
-  tab: "movie",
-  explicit: true,
-};
-
 const cardUrl = (entry: Entry) =>
   `/play/${entry.tmdbId}?kind=${entry.kind}${entry.anime ? "&anime=1" : ""}&title=${encodeURIComponent(
     entry.name,
@@ -71,32 +58,14 @@ export function AudienceShelves() {
   const { profile } = useStore();
   const kids = Boolean(profile?.kids);
   const level = profile?.maturity ?? "";
-  /* R-rated needs a 16+ profile, 18+ needs the All profile, kids see neither */
-  /* signed-out visitors have no age on file: they get the general R row */
+  /* R-rated needs a 16+ profile; kids see neither row. Signed-out visitors
+     have no age on file, so they get the general R row. */
   const matureOk = !kids && (level === "" || level === "16" || level === "all");
-  /*
-   * 18+ shelf: needs a saved profile pinned to "All" maturity *and* a switch the
-   * viewer flipped themselves. A signed-out visitor has no age on file, so the
-   * row stays hidden rather than defaulting to the widest setting.
-   */
-  const adultOk = Boolean(profile) && !kids && level === "all";
-  const [optedIn, setOptedIn] = useState(false);
-
-  useEffect(() => {
-    try {
-      setOptedIn(window.localStorage.getItem("nf.adult") === "1");
-    } catch {
-      /* storage disabled — stay off */
-    }
-  }, []);
-
-  const adult = adultOk && optedIn;
 
   const wanted = useMemo(() => {
     if (kids) return [];
-    const shelves = SHELVES.filter((shelf) => shelf.id !== "mature" || matureOk);
-    return adult ? [...shelves, AFTER_DARK] : shelves;
-  }, [adult, kids, matureOk]);
+    return SHELVES.filter((shelf) => shelf.id !== "mature" || matureOk);
+  }, [kids, matureOk]);
 
   const [data, setData] = useState<Record<string, Entry[]>>({});
 
@@ -110,14 +79,13 @@ export function AudienceShelves() {
             audience: shelf.audience,
             limit: "20",
           });
-          if (shelf.explicit) params.set("explicit", "1");
           try {
             const res = await fetch(`/api/catalogue?${params.toString()}`);
             if (!res.ok) return [shelf.id, [] as Entry[]] as const;
             const payload = (await res.json()) as { results?: Entry[] };
             /* never trust the response alone: a kid-safe profile filters again */
             const results = (payload.results ?? []).filter((entry) =>
-              kids ? !entry.explicit && entry.audience === "kids" : true,
+              kids ? entry.audience === "kids" : true,
             );
             return [shelf.id, results] as const;
           } catch {
@@ -182,7 +150,7 @@ export function AudienceShelves() {
                       </span>
                     </span>
                     <span className="absolute left-1.5 top-1.5 rounded bg-black/70 px-1.5 py-0.5 text-[8.5px] font-bold uppercase tracking-[0.12em] text-white/80 backdrop-blur">
-                      {entry.explicit ? "18+" : entry.kind === "series" ? "Series" : "Film"}
+                      {entry.kind === "series" ? "Series" : "Film"}
                     </span>
                   </Link>
                 </motion.div>

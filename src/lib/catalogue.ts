@@ -30,15 +30,12 @@ export type CatalogueEntry = {
   anime?: boolean;
   /**
    * Which sweep found it. `kids` = certified G/PG or family animation,
-   * `mature` = R / TV-MA / crime / horror, `explicit` = TMDb adult titles that
-   * only an 18+ profile may request.
+   * `mature` = R / TV-MA / crime / horror.
    */
   audience?: Audience;
-  /** TMDb `adult` flag — never served unless the caller asked for it */
-  explicit?: boolean;
 };
 
-export type Audience = "kids" | "mature" | "explicit" | "general";
+export type Audience = "kids" | "mature" | "general";
 
 /**
  * How many titles each tab holds. Raised from 1,000 to 2,500 now that the
@@ -98,8 +95,7 @@ function map(
     overview: item.overview || undefined,
     genres: item.genre_ids ?? [],
     anime,
-    audience: audience === "explicit" ? "explicit" : audience,
-    explicit: audience === "explicit" || item.adult === true ? true : undefined,
+    audience,
   };
 }
 
@@ -112,8 +108,8 @@ async function tmdb(
 
   const url = new URL(`${ENDPOINT}${path}`);
   url.searchParams.set("language", "en-US");
-  /* only the explicit sweep is allowed to ask TMDb for adult titles */
-  url.searchParams.set("include_adult", params.include_adult === "true" ? "true" : "false");
+  /* adult titles are never requested, from any sweep */
+  url.searchParams.set("include_adult", "false");
   Object.entries(params).forEach(([name, value]) => url.searchParams.set(name, value));
 
   const headers: Record<string, string> = { accept: "application/json" };
@@ -293,113 +289,17 @@ const TTL = 6 * 60 * 60 * 1000;
 /* 2,500 titles across a dozen interleaved sweeps costs ~140 pages of 20 */
 const MAX_PAGE = 220;
 
-/** How many 18+ titles the opt-in pass keeps (TMDb's adult pool is small). */
-const EXPLICIT_TARGET = 400;
-
 /**
  * Build (or reuse) the catalogue for one tab: exactly `CATALOGUE_TARGET`
  * unique, artwork-complete titles, popularity ordered.
  */
-export async function buildCatalogue(
-  tab: CatalogueTab,
-  options: { explicit?: boolean } = {},
-): Promise<CatalogueEntry[]> {
-  const wanted = Boolean(options.explicit);
-  const cacheKey = `${tab}:${wanted ? "explicit" : "clean"}`;
+export async function buildCatalogue(tab: CatalogueTab): Promise<CatalogueEntry[]> {
+  const cacheKey = `${tab}:shelf`;
   const hit = memo.get(cacheKey);
   if (hit && Date.now() - hit.at < TTL) return hit.items;
-
-  const base = await buildShelf(tab);
-  if (!wanted) {
-    memo.set(cacheKey, { at: Date.now(), items: base });
-    return base;
-  }
-
-  /* 18+ titles are built in their own pass and appended, so they can never
-     crowd the general shelf out of its 2,500 slots — and a caller that did not
-     ask for them never sees them at all. */
-  const items = [...base, ...(await buildExplicit(tab))];
+  const items = await buildShelf(tab);
   memo.set(cacheKey, { at: Date.now(), items });
   return items;
-}
-
-/**
- * TMDb adult titles, opt-in only.
- *
- * `include_adult=true` is the one flag TMDb offers here, and most of what it
- * returns has no artwork — which our poster filter drops — so the useful yield
- * is a few hundred titles rather than thousands.
- */
-async function buildExplicit(tab: CatalogueTab): Promise<CatalogueEntry[]> {
-  const cacheKey = `${tab}:adult-only`;
-  const hit = memo.get(cacheKey);
-  if (hit && Date.now() - hit.at < TTL) return hit.items;
-
-  const today = new Date().toISOString().slice(0, 10);
-  /*
-   * `include_adult=true` means "do not hide adult titles", not "only adult
-   * titles" — TMDb happily returns The Dark Knight alongside them. So every row
-   * is filtered down to items actually flagged `adult`, plus US NC-17 films,
-   * which is the closest thing to an 18+ certificate TMDb exposes at discover
-   * time.
-   */
-  const plan: PagePlan[] = [
-    {
-      path: "/discover/movie",
-      kind: "movie",
-      params: {
-        sort_by: "popularity.desc",
-        include_adult: "true",
-        "primary_release_date.lte": today,
-      },
-      audience: "explicit",
-    },
-    {
-      path: "/discover/movie",
-      kind: "movie",
-      params: {
-        sort_by: "vote_count.desc",
-        include_adult: "true",
-        "vote_count.gte": "5",
-        "primary_release_date.lte": today,
-      },
-      audience: "explicit",
-    },
-    {
-      path: "/discover/movie",
-      kind: "movie",
-      params: {
-        sort_by: "vote_count.desc",
-        certification_country: "US",
-        certification: "NC-17",
-        "primary_release_date.lte": today,
-      },
-      audience: "explicit",
-    },
-  ];
-
-  const out: CatalogueEntry[] = [];
-  const seen = new Set<number>();
-
-  for (let page = 1; page <= 25 && out.length < EXPLICIT_TARGET; page++) {
-    const rows = await Promise.all(plan.map((source) => tmdb(source.path, { ...source.params, page: String(page) })));
-    for (let index = 0; index < rows.length; index++) {
-      const nc17 = plan[index].params.certification === "NC-17";
-      for (const item of rows[index]) {
-        /* the adult flag is the only honest 18+ signal in a discover response */
-        if (!nc17 && item.adult !== true) continue;
-        if (seen.has(item.id)) continue;
-        seen.add(item.id);
-        out.push(map(item, plan[index].kind, tab === "anime", "explicit"));
-        if (out.length >= EXPLICIT_TARGET) break;
-      }
-      if (out.length >= EXPLICIT_TARGET) break;
-    }
-    if (rows.every((row) => row.length === 0)) break;
-  }
-
-  memo.set(cacheKey, { at: Date.now(), items: out });
-  return out;
 }
 
 /** The general shelf for one tab: audience-tagged, `CATALOGUE_TARGET` long. */

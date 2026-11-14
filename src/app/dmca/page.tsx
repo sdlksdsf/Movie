@@ -13,12 +13,6 @@ export default function Page() {
         NOFLIX does not host video files. Everything playable is served by independent third-party
         embed providers; NOFLIX only links to them and displays metadata from public APIs.
       </p>
-      <p>
-        That applies to the adults-only section as well: the 18+ vault embeds the provider&apos;s own
-        player and keeps no copy of any stream, so takedown requests for that material must go to
-        that provider, not here. What is ours is the link, the label and the layout — and removing
-        those is the one thing we can do.
-      </p>
 
       <h2>Reporting a problem</h2>
       <p>
