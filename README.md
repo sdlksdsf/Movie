@@ -167,7 +167,11 @@ Optional environment variables (all client-safe, none required to run):
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Anonymous (RLS-protected) key for that project |
 | `VAULT_PIN` | Server-only. Arms the 18+ vault; keep it out of the client bundle |
 | `VAULT_SECRET` | Optional HMAC key for the vault session cookie (defaults to the PIN) |
-| `VAULT_FEED_URL` | JSON index of streams for the vault — you supply the provider |
+| `VAULT_PROVIDER` | `eporner` (default, keyless) · `custom` · `none` |
+| `VAULT_ORDER` | Eporner ordering: `top-weekly` (default), `top-monthly`, `top-rated`, `latest` |
+| `VAULT_QUERY` | Optional search term for the Eporner feed |
+| `VAULT_PAGES` | How many 100-item pages to pull, 1–6 (default 2) |
+| `VAULT_FEED_URL` | Custom JSON index — only used when `VAULT_PROVIDER=custom` |
 | `VAULT_FEED_KEY` | Optional bearer token for that feed |
 
 ### The 18+ vault
@@ -184,8 +188,24 @@ way in is Settings → Privacy & data, and that panel is not rendered at all for
 kids, 7+, 13+ or 16+ profiles. Sessions are revoked the moment a non-adult
 profile opens the page, and PIN attempts are throttled to five per ten minutes.
 
-NOFLIX stores and proxies no adult media. `VAULT_FEED_URL` should point at your
-provider's JSON index:
+**NOFLIX hosts nothing, for any section of the site.** There is no media storage
+in the deployment: posters and text come from public metadata APIs, and playback
+happens inside the provider's own player, in an iframe, directly from their CDN
+to the visitor's browser. Nothing is proxied, mirrored, re-encoded or cached,
+and no watch history is recorded for the vault.
+
+Content is plugged in with `VAULT_PROVIDER`:
+
+| Value | What it does |
+|---|---|
+| `eporner` *(default)* | Eporner's public Webmasters API v2 — keyless, documented, returns an `embed_url` per video. The sanctioned integration path; their terms forbid scraping the site, which this never does. Nothing to configure. |
+| `custom` | Your own provider. `VAULT_FEED_URL` returns JSON; each entry needs `id`, `title` and either `embed` (iframe player URL) or `stream` (`.m3u8` / `.mp4`). |
+| `none` | No content, gate stays armed. |
+
+Eporner tuning: `VAULT_ORDER` (`top-weekly`, `top-monthly`, `top-rated`,
+`latest`), `VAULT_QUERY` for a search term, `VAULT_PAGES` (1–6, 100 items each).
+
+A custom feed should look like:
 
 ```json
 {
@@ -197,6 +217,7 @@ provider's JSON index:
       "duration": "12:41",
       "tags": ["solo", "amateur"],
       "poster": "https://cdn.example/thumb.jpg",
+      "embed": "https://provider.example/embed/abc123/",
       "stream": "https://cdn.example/master.m3u8",
       "rating": "18+"
     }
@@ -205,8 +226,11 @@ provider's JSON index:
 ```
 
 A bare array, `{ "results": [...] }` or `{ "data": { "items": [...] } }` are also
-accepted; entries without an `http(s)` `stream` and a `title` are dropped. HLS
-is played with hls.js, everything else through the native `<video>` element.
+accepted; entries without an `http(s)` `embed`/`stream` and a `title` are
+dropped. `embed` wins when both are present (the provider plays it); a bare
+`stream` is played by hls.js for `.m3u8` and by the native `<video>` element
+otherwise. Only `http(s)` URLs survive normalisation, so a `javascript:` entry
+in a feed cannot reach a player.
 
 ## Deploy it yourself
 

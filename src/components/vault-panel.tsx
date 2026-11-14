@@ -84,8 +84,9 @@ export function VaultPanel() {
 
       {status === "disabled" && (
         <p className="mt-4 rounded-md border border-white/12 bg-white/[0.03] px-3 py-2 text-[12.5px] leading-relaxed text-white/50">
-          Not set up on this deployment. Set <code className="text-white/75">VAULT_PIN</code> to arm the vault, and{" "}
-          <code className="text-white/75">VAULT_FEED_URL</code> to give it something to play.
+          Not set up on this deployment. Set <code className="text-white/75">VAULT_PIN</code> to arm the vault. Content
+          comes from <code className="text-white/75">VAULT_PROVIDER</code> (Eporner by default) or your own{" "}
+          <code className="text-white/75">VAULT_FEED_URL</code>; nothing is hosted here.
         </p>
       )}
 
