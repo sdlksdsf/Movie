@@ -7,6 +7,7 @@ import { ProfileAvatar } from "@/components/avatar";
 import { Navbar } from "@/components/navbar";
 import { Footer } from "@/components/footer";
 import { DeveloperPanel } from "@/components/developer-panel";
+import { VaultPanel } from "@/components/vault-panel";
 import { useStore } from "@/components/store";
 import { ACCENTS, MATURITY, type MaturityLevel } from "@/lib/avatars";
 import { PLAYERS, QUALITIES } from "@/lib/players";
@@ -536,7 +537,9 @@ function PlaybackPanel() {
 /* ------------------------------------------------------------------- privacy */
 
 function PrivacyPanel() {
-  const { settings, updateSettings, clearEverything, myList, progress } = useStore();
+  const { settings, updateSettings, clearEverything, myList, progress, profile } = useStore();
+  /* the vault entry point is never mounted for kids or under-18 profiles */
+  const adultProfile = Boolean(profile && !profile.kids && profile.maturity === "all");
   const router = useRouter();
   const [confirming, setConfirming] = useState(false);
   const synced = Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL);
@@ -573,6 +576,8 @@ function PrivacyPanel() {
           Kids profiles always hide mature titles, whatever this switch says.
         </p>
       </Panel>
+
+      {adultProfile && <VaultPanel />}
 
       <Panel title="Your data" hint="You own everything NOFLIX stores about you.">
         <div className="grid gap-2 sm:grid-cols-3">
