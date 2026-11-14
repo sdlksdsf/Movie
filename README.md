@@ -165,6 +165,48 @@ Optional environment variables (all client-safe, none required to run):
 | `NEXT_PUBLIC_TMDB_KEY` | Overrides the TMDB key used for metadata and trailers |
 | `NEXT_PUBLIC_SUPABASE_URL` | Turns on cloud sync |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Anonymous (RLS-protected) key for that project |
+| `VAULT_PIN` | Server-only. Arms the 18+ vault; keep it out of the client bundle |
+| `VAULT_SECRET` | Optional HMAC key for the vault session cookie (defaults to the PIN) |
+| `VAULT_FEED_URL` | JSON index of streams for the vault — you supply the provider |
+| `VAULT_FEED_KEY` | Optional bearer token for that feed |
+
+### The 18+ vault
+
+The vault is a separate route (`/vault`) with its own server-side gate, and it is
+off until you set `VAULT_PIN`. Three things must be true before anything is
+served: the deployment has a PIN, the request carries a valid HMAC-signed
+httpOnly cookie (45-minute TTL, set only by a correct PIN), and the active
+profile is an adult profile at **All** maturity. Fail any of them and `/vault`
+returns a plain 404 — no "locked" screen, nothing to discover.
+
+It is not linked from the navbar, footer, search, shelves or home page; the only
+way in is Settings → Privacy & data, and that panel is not rendered at all for
+kids, 7+, 13+ or 16+ profiles. Sessions are revoked the moment a non-adult
+profile opens the page, and PIN attempts are throttled to five per ten minutes.
+
+NOFLIX stores and proxies no adult media. `VAULT_FEED_URL` should point at your
+provider's JSON index:
+
+```json
+{
+  "items": [
+    {
+      "id": "abc123",
+      "title": "Example",
+      "year": 2024,
+      "duration": "12:41",
+      "tags": ["solo", "amateur"],
+      "poster": "https://cdn.example/thumb.jpg",
+      "stream": "https://cdn.example/master.m3u8",
+      "rating": "18+"
+    }
+  ]
+}
+```
+
+A bare array, `{ "results": [...] }` or `{ "data": { "items": [...] } }` are also
+accepted; entries without an `http(s)` `stream` and a `title` are dropped. HLS
+is played with hls.js, everything else through the native `<video>` element.
 
 ## Deploy it yourself
 
