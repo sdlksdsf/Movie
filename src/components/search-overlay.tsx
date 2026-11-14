@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { artUrl } from "@/lib/img";
 import { AnimatePresence, motion } from "framer-motion";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { CloseIcon, SearchIcon } from "@/components/icons";
@@ -227,7 +228,7 @@ export function SearchOverlay() {
                               {item.poster ? (
                                 // eslint-disable-next-line @next/next/no-img-element
                                 <img
-                                  src={item.poster}
+                                  src={artUrl(item.poster)}
                                   alt={item.name}
                                   loading="lazy"
                                   className="h-full w-full object-cover"

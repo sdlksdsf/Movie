@@ -72,7 +72,9 @@ export function Billboard() {
       <AnimatePresence initial={false}>
         <motion.div
           key={`bg-${active.slug}`}
-          initial={{ opacity: 0, scale: 1.08 }}
+          /* starts at full opacity: if the animation never runs (or the slide
+             never mounts cleanly) the backdrop is still there */
+          initial={{ opacity: 1, scale: 1.06 }}
           animate={{ opacity: 1, scale: 1 }}
           exit={{ opacity: 0, transition: { duration: 0.55, ease: "easeIn" } }}
           transition={{ opacity: { duration: 0.9, ease: "easeOut" }, scale: { duration: 9, ease: "linear" } }}
@@ -83,6 +85,7 @@ export function Billboard() {
             name={active.name}
             kind="backdrop"
             accent={active.accent}
+            tmdbId={active.tmdbId}
             priority
             sizes="100vw"
           />
@@ -93,7 +96,7 @@ export function Billboard() {
       <AnimatePresence initial={false}>
         <motion.div
           key={`wash-${active.slug}`}
-          initial={{ opacity: 0 }}
+          initial={{ opacity: 1 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 1.4 }}

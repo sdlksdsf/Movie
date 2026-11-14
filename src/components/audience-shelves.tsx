@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { artUrl } from "@/lib/img";
 import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { useStore } from "@/components/store";
@@ -129,7 +130,7 @@ export function AudienceShelves() {
                       {entry.poster ? (
                         // eslint-disable-next-line @next/next/no-img-element
                         <img
-                          src={entry.poster}
+                          src={artUrl(entry.poster)}
                           alt={entry.name}
                           loading="lazy"
                           className="h-full w-full object-cover"

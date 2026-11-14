@@ -121,6 +121,22 @@ body {
   animation: shimmer 1.6s linear infinite;
 }
 
+/* Rows rise in with CSS only — never gated on hydration or an observer, so a
+   JS hiccup can never leave the catalogue invisible */
+@keyframes nf-rise {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 18px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.nf-rise {
+  animation: nf-rise 0.55s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
 /* Hero "ken burns" drift */
 @keyframes kenburns {
   0% {

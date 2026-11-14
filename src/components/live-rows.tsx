@@ -1,6 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+import { artUrl } from "@/lib/img";
 import { useCallback, useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { useStore } from "@/components/store";
@@ -162,7 +163,7 @@ export function LiveRows({ variant = "home" }: { variant?: "home" | "anime" }) {
                       {item.poster ? (
                         // eslint-disable-next-line @next/next/no-img-element
                         <img
-                          src={item.poster}
+                          src={artUrl(item.poster)}
                           alt={item.name}
                           loading="lazy"
                           className="h-full w-full object-cover"

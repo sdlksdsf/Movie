@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import { hasRemotePoster, localBackdrops, localPosters, remotePoster } from "@/data/artwork";
 import { backdropSrc, posterSrc } from "@/lib/catalog";
 import { cn } from "@/lib/cn";
@@ -14,12 +14,22 @@ type ArtworkProps = {
   priority?: boolean;
   className?: string;
   sizes?: string;
+  /** when known, art is resolved from TMDB by id — the most dependable source */
+  tmdbId?: number;
 };
 
 /**
  * Artwork with a graceful fallback ladder so the grid is never empty:
- *   poster   → IMDb CDN 500px poster → local optimised webp → gradient plate
- *   backdrop → local wide still → IMDb poster → local poster → gradient plate
+ *   poster   → REMOTE poster → local optimised webp → gradient plate
+ *   backdrop → local wide still → REMOTE still → local poster → gradient plate
+ *
+ * Two rules keep this honest:
+ *   1. every remote URL goes through `/api/img`, so the browser never talks to
+ *      a third-party CDN that might be blocked, slow or silently hanging — the
+ *      proxy's timeout turns a hung host into an `onError` we can act on;
+ *   2. an <img> is visible from the first paint. It used to be opacity-0 until
+ *      a client-side `onLoad` flipped a React state, which meant any hydration
+ *      problem or stalled request left the whole site looking image-less.
  */
 export function Artwork({
   slug,
@@ -29,65 +39,44 @@ export function Artwork({
   priority = false,
   className,
   sizes,
+  tmdbId,
 }: ArtworkProps) {
   const sources = useMemo(() => {
     const remote = remotePoster(slug);
+    const byTmdb = tmdbId ? `/api/img?tmdb=${tmdbId}&kind=${kind}` : null;
     const list: string[] = [];
 
     if (kind === "backdrop") {
       if (localBackdrops.has(slug)) list.push(backdropSrc(slug));
+      if (byTmdb) list.push(byTmdb);
       if (remote) list.push(remote);
       if (localPosters.has(slug)) list.push(posterSrc(slug));
       if (!list.length) list.push(backdropSrc(slug), posterSrc(slug));
       return list;
     }
 
+    if (byTmdb) list.push(byTmdb);
     if (remote) list.push(remote);
     if (localPosters.has(slug)) list.push(posterSrc(slug));
     if (!list.length) list.push(posterSrc(slug));
     return list;
-  }, [slug, kind]);
+  }, [slug, kind, tmdbId]);
 
   const [index, setIndex] = useState(0);
-  const [loaded, setLoaded] = useState(false);
-  const holder = useRef<HTMLSpanElement>(null);
-  const src = sources[Math.min(index, sources.length - 1)];
-
-  useEffect(() => {
-    setIndex(0);
-    setLoaded(false);
-  }, [slug, kind]);
-
-  /**
-   * Images that finish loading *before* React hydrates never fire `onLoad`,
-   * which used to leave banner/poster art stuck at opacity 0. Sweep for any
-   * already-decoded <img> once mounted (and again after paint) to be safe.
-   */
-  useEffect(() => {
-    const check = () => {
-      const img = holder.current?.querySelector("img");
-      if (img && img.complete && img.naturalWidth > 0) setLoaded(true);
-    };
-    check();
-    const raf = window.requestAnimationFrame(check);
-    const timer = window.setTimeout(check, 400);
-    return () => {
-      window.cancelAnimationFrame(raf);
-      window.clearTimeout(timer);
-    };
-  }, [src]);
+  const raw = sources[Math.min(index, sources.length - 1)];
+  /* local /img/… paths are already ours; only remote art needs the proxy */
+  const src = /^https?:\/\//i.test(raw) ? `/api/img?u=${encodeURIComponent(raw)}` : raw;
 
   const failed = index >= sources.length;
 
   return (
-    <span ref={holder} className={cn("relative block h-full w-full overflow-hidden bg-[#1a1a1a]", className)}>
-      {/* colour wash placeholder — avoids a black flash while the art loads */}
+    <span className={cn("relative block h-full w-full overflow-hidden bg-[#1a1a1a]", className)}>
+      {/* colour wash under the art — visible while it loads, never "black hole" */}
       <span
         aria-hidden
-        className="absolute inset-0 transition-opacity duration-700"
+        className="absolute inset-0"
         style={{
           background: `radial-gradient(120% 90% at 30% 15%, ${accent}66 0%, #101010 60%, #050505 100%)`,
-          opacity: loaded ? 0 : 1,
         }}
       />
 
@@ -101,12 +90,9 @@ export function Artwork({
           sizes={sizes ?? "(max-width: 768px) 45vw, 220px"}
           priority={priority}
           loading={priority ? undefined : "lazy"}
-          onLoad={() => setLoaded(true)}
+          /* no client state decides whether the art is visible */
           onError={() => setIndex((i) => i + 1)}
-          className={cn(
-            "object-cover object-center transition-opacity duration-500",
-            loaded ? "opacity-100" : "opacity-0",
-          )}
+          className="object-cover object-center opacity-100"
         />
       )}
 
