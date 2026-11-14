@@ -66,7 +66,7 @@ export default function Page() {
       <h2>Cookies</h2>
       <p>
         NOFLIX sets exactly one cookie, and only if you use the vault:{" "}
-        <code>nf_vault</code> — httpOnly, SameSite=Lax, 45-minute lifetime, containing nothing but a
+        <code>nf_vault</code>{" "} — httpOnly, SameSite=Lax, 45-minute lifetime, containing nothing but a
         signed expiry timestamp. It is created when you enter the PIN correctly and deleted when you
         press <em>Lock</em>, when the timer runs out, or when a non-adult profile opens the vault.
         Nothing else on this site sets a cookie, and there are no trackers, analytics scripts,
