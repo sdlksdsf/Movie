@@ -8,8 +8,9 @@ import type { Title } from "@/lib/types";
  * Anime servers speak AniList ids, which `anime-ids.ts` resolves when a title
  * only knows its name.
  *
- *   Films & series    frameXTV → VidFast → VidLink → CineLite → RiveStream
- *   Anime             VidNest → AniEmbed → VidFast → VidLink → frameXTV
+ *   Films & series    frameXTV → VidLink → VidFast → VixSrc → CineLite
+ *                     → VidSpark → EmbedWave → RiveStream
+ *   Anime             VidNest → AniEmbed → frameXTV → VidLink → VidFast → VixSrc
  *
  * Every chain mixes independent providers, so one dead host never takes a
  * title down. The player only walks the chain when a frame genuinely fails to
@@ -18,9 +19,12 @@ import type { Title } from "@/lib/types";
 
 export type PlayerId =
   | "framex"
-  | "vidfast"
   | "vidlink"
+  | "vidfast"
+  | "vixsrc"
   | "cinelite"
+  | "vidspark"
+  | "embedwave"
   | "rivestream"
   | "vidnest"
   | "aniembed";
@@ -53,20 +57,60 @@ export const PLAYERS: PlayerDef[] = [
     rank: 0,
   },
   {
-    id: "vidfast",
-    label: "VidFast",
-    short: "Fast",
-    hint: "Fast start · 4K, 8 internal sources",
-    host: "https://vidfast.pro",
-    rank: 1,
-  },
-  {
     id: "vidlink",
     label: "VidLink",
     short: "Link",
     hint: "Backup · 1080p, 13 subtitle tracks",
     host: "https://vidlink.pro",
+    rank: 1,
+  },
+  {
+    id: "vidfast",
+    label: "VidFast",
+    short: "Fast",
+    hint: "Fast start · 4K, 8 internal sources",
+    host: "https://vidfast.vc",
     rank: 2,
+  },
+  {
+    id: "vixsrc",
+    label: "VixSrc",
+    short: "Vix",
+    hint: "Backup · HLS, subtitles, 720p",
+    host: "https://vixsrc.to",
+    rank: 3,
+  },
+  {
+    id: "cinelite",
+    label: "CineLite",
+    short: "Lite",
+    hint: "Backup · 4K + subtitles",
+    host: "https://embed.cinelite.xyz",
+    rank: 4,
+  },
+  {
+    id: "vidspark",
+    label: "VidSpark",
+    short: "Spark",
+    hint: "Backup · auto-resume, multi-server",
+    host: "https://vidspark.to",
+    rank: 5,
+  },
+  {
+    id: "embedwave",
+    label: "EmbedWave",
+    short: "Wave",
+    hint: "Backup · multi HD, no key",
+    host: "https://embedwave.cc",
+    rank: 6,
+  },
+  {
+    id: "rivestream",
+    label: "RiveStream",
+    short: "Rive",
+    hint: "Fallback · if the others are down",
+    host: "https://rivestream.ru",
+    rank: 7,
   },
   {
     id: "vidnest",
@@ -75,7 +119,7 @@ export const PLAYERS: PlayerDef[] = [
     hint: "Anime specialist · 1080p, sub & dub",
     host: "https://vidnest.fun",
     badge: "Anime",
-    rank: 5,
+    rank: 8,
     animeOnly: true,
   },
   {
@@ -84,24 +128,8 @@ export const PLAYERS: PlayerDef[] = [
     short: "Ani",
     hint: "Anime backup · skip intro & ending",
     host: "https://aniembed.se",
-    rank: 6,
+    rank: 9,
     animeOnly: true,
-  },
-  {
-    id: "cinelite",
-    label: "CineLite",
-    short: "Lite",
-    hint: "Backup · 4K + subtitles",
-    host: "https://embed.cinelite.xyz",
-    rank: 3,
-  },
-  {
-    id: "rivestream",
-    label: "RiveStream",
-    short: "Rive",
-    hint: "Fallback · if the others are down",
-    host: "https://rivestream.ru",
-    rank: 4,
   },
 ];
 
@@ -131,8 +159,8 @@ export function isAnimeTitle(title: Title) {
  */
 export function playOrder(title: Title): PlayerId[] {
   return isAnimeTitle(title)
-    ? ["vidnest", "aniembed", "vidfast", "vidlink", "framex"]
-    : ["framex", "vidfast", "vidlink", "cinelite", "rivestream"];
+    ? ["vidnest", "aniembed", "framex", "vidlink", "vidfast", "vixsrc"]
+    : ["framex", "vidlink", "vidfast", "vixsrc", "cinelite", "vidspark", "embedwave", "rivestream"];
 }
 
 /** Every other server, in chain order. */
@@ -161,7 +189,8 @@ export function canPlay(id: PlayerId, title: Title, anilistId?: number | null): 
   const ani = anilistId ?? title.anilistId ?? 0;
   if (id === "aniembed") return Boolean(ani);
   if (id === "vidnest" || id === "cinelite") return Boolean(ani || title.tmdbId);
-  /* vidfast / vidlink / framex / rivestream all need a TMDB id */
+  /* vidfast / vidlink / framex / rivestream / vixsrc / vidspark / embedwave
+     all need a TMDB id */
   return Boolean(title.tmdbId);
 }
 
@@ -214,11 +243,11 @@ export function buildSrc(o: {
   }
 
   if (player === "vidfast") {
-    // https://vidfast.pro/movie/{tmdbId} · /tv/{tmdbId}/{s}/{e}
+    // https://vidfast.vc/movie/{tmdbId} · /tv/{tmdbId}/{s}/{e}
     const base =
       title.kind === "series"
-        ? `https://vidfast.pro/tv/${title.tmdbId}/${season}/${episode}`
-        : `https://vidfast.pro/movie/${title.tmdbId}`;
+        ? `https://vidfast.vc/tv/${title.tmdbId}/${season}/${episode}`
+        : `https://vidfast.vc/movie/${title.tmdbId}`;
     const params = new URLSearchParams({ autoPlay: "true", theme: ACCENT });
     if (title.kind === "series") params.set("nextButton", "true");
     if (resume) params.set("startAt", String(resume));
@@ -234,6 +263,39 @@ export function buildSrc(o: {
     const params = new URLSearchParams({ autoplay: "true", primaryColor: ACCENT });
     if (title.kind === "series") params.set("nextbutton", "true");
     if (resume) params.set("startAt", String(resume));
+    return `${base}?${params.toString()}`;
+  }
+
+  if (player === "vixsrc") {
+    // https://vixsrc.to/movie/{tmdbId} · /tv/{tmdbId}/{s}/{e}
+    const base =
+      title.kind === "series"
+        ? `https://vixsrc.to/tv/${title.tmdbId}/${season}/${episode}`
+        : `https://vixsrc.to/movie/${title.tmdbId}`;
+    const params = new URLSearchParams({ color: ACCENT, autoplay: "true" });
+    if (resume) params.set("t", String(resume));
+    return `${base}?${params.toString()}`;
+  }
+
+  if (player === "vidspark") {
+    // https://vidspark.to/movie/{tmdbId} · /tv/{tmdbId}/{s}/{e}
+    const base =
+      title.kind === "series"
+        ? `https://vidspark.to/tv/${title.tmdbId}/${season}/${episode}`
+        : `https://vidspark.to/movie/${title.tmdbId}`;
+    const params = new URLSearchParams({ autoplay: "true", color: ACCENT });
+    if (resume) params.set("t", String(resume));
+    return `${base}?${params.toString()}`;
+  }
+
+  if (player === "embedwave") {
+    // https://embedwave.cc/embed/movie/{tmdbId} · /embed/tv/{tmdbId}/{s}/{e}
+    const base =
+      title.kind === "series"
+        ? `https://embedwave.cc/embed/tv/${title.tmdbId}/${season}/${episode}`
+        : `https://embedwave.cc/embed/movie/${title.tmdbId}`;
+    const params = new URLSearchParams({ autoplay: "1", color: ACCENT });
+    if (resume) params.set("t", String(resume));
     return `${base}?${params.toString()}`;
   }
 

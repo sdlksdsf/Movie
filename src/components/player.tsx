@@ -151,8 +151,9 @@ export function Player({
   const [player, setPlayer] = useState<PlayerId>(() =>
     resolvePlayer(anime ? "vidnest" : DEFAULT_PLAYER, title),
   );
-  /* NOFLIX's own player first; the embeds are the backup servers now */
-  const [nativeMode, setNativeMode] = useState(true);
+  /* embeds first — they are live right now, and a stale direct link used to
+     leave the frame black. The NOFLIX player is opt-in from the server menu. */
+  const [nativeMode, setNativeMode] = useState(false);
   const [nativeState, setNativeState] = useState<"loading" | "ready" | "none">("loading");
   const [nativeSources, setNativeSources] = useState<NativeSource[]>([]);
   const [quality, setQuality] = useState<Quality>(DEFAULT_QUALITY);
@@ -167,6 +168,9 @@ export function Player({
   const [nudge, setNudge] = useState(false);
   const [upNext, setUpNext] = useState<{ left: number } | null>(null);
   const [nonce, setNonce] = useState(0);
+  /* an embed that loads but never starts playing is invisible to us across
+     origins — after a while we offer an explicit way out */
+  const [stalled, setStalled] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(true);
 
   const iframeRef = useRef<HTMLIFrameElement>(null);
@@ -203,6 +207,11 @@ export function Player({
     }
     let alive = true;
     setAniState("pending");
+    /* never hold the frame hostage to this lookup: after four seconds we fall
+       back to the TMDB-id servers instead of showing an empty player */
+    const patience = window.setTimeout(() => {
+      if (alive) setAniState((current) => (current === "pending" ? "none" : current));
+    }, 4000);
     void anilistIdFor({
       name: title.name,
       year: title.year,
@@ -215,6 +224,7 @@ export function Player({
     });
     return () => {
       alive = false;
+      window.clearTimeout(patience);
     };
   }, [anime, title.slug, title.name, title.year, title.tmdbId, title.anilistId, title.malId]);
 
@@ -279,11 +289,11 @@ export function Player({
     setPlayer(resolvePlayer(start, title, title.anilistId ?? null));
     const q = ls.get("nf.quality");
     if (q && (QUALITIES as readonly string[]).includes(q)) setQuality(q as Quality);
-    /* remembers a manual switch to the backup embeds */
+    /* only an explicit opt-in turns the NOFLIX player back on */
     try {
-      if (window.localStorage.getItem("nf.native3") === "0") setNativeMode(false);
+      setNativeMode(window.localStorage.getItem("nf.native3") === "1");
     } catch {
-      /* private mode */
+      /* private mode — stay on the embeds */
     }
     // legacy keys are deliberately ignored so everyone lands on frameXTV
   }, [title]);
@@ -385,6 +395,27 @@ export function Player({
     toast(`Playing from ${playerMeta(next).label}`);
   }, [player, title, toast, anilistId]);
 
+  /** the server the "try another" button will switch to */
+  const nextUp = useMemo(() => {
+    const chain = playOrder(title).filter((id) => canPlay(id, title, anilistId));
+    if (chain.length < 2) return null;
+    return chain[(chain.indexOf(player) + 1) % chain.length];
+  }, [title, player, anilistId]);
+
+  useEffect(() => {
+    if (nativeActive) {
+      setStalled(false);
+      return;
+    }
+    setStalled(false);
+    const timer = window.setTimeout(() => {
+      /* only when nothing has reported playback — a silent provider is not a
+         dead one, so this prompts rather than switching by itself */
+      if (!playingRef.current) setStalled(true);
+    }, 12000);
+    return () => window.clearTimeout(timer);
+  }, [src, nativeActive, playing]);
+
   /* per-source reset: cheap, so switching feels instant */
   useEffect(() => {
     setLoaded(false);
@@ -400,10 +431,10 @@ export function Player({
     clearPauseTimer();
 
     /* a frame that never even loads is the only failure we can see across
-       origins — give embeds a generous 18s before moving on by ourselves */
+       origins — give embeds 12s before moving on by ourselves */
     const slow = window.setTimeout(() => {
       if (!loadedRef.current) hardFallback();
-    }, 18000);
+    }, 12000);
     return () => window.clearTimeout(slow);
   }, [src, hardFallback]);
 
@@ -665,6 +696,30 @@ export function Player({
           className="absolute inset-0 z-10 h-full w-full border-0"
         />
       )}
+
+      {/* loaded but nothing playing: an explicit way out, never automatic */}
+      <AnimatePresence>
+        {stalled && !nativeActive && nextUp && (
+          <motion.div
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 8 }}
+            transition={{ duration: 0.18 }}
+            className="absolute inset-x-0 bottom-20 z-20 flex justify-center px-4"
+          >
+            <button
+              type="button"
+              onClick={() => {
+                setStalled(false);
+                cycleServer();
+              }}
+              className="pointer-events-auto rounded-full border border-white/20 bg-[#141414]/95 px-4 py-2 text-[12px] font-semibold text-white shadow-2xl backdrop-blur-md transition hover:border-[var(--nf-accent)] hover:bg-[var(--nf-accent)]"
+            >
+              Nothing playing yet? Try {playerMeta(nextUp).label} →
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* thin load bar, top edge — instant, non-blocking feedback */}
       <AnimatePresence>
